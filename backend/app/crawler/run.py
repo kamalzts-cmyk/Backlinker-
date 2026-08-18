@@ -13,8 +13,10 @@ from crawlee import Request
 from crawlee.crawlers import BeautifulSoupCrawlingContext, PlaywrightCrawlingContext
 
 from app.core.config import settings
+from app.crawler.extractors.contact import extract_contact_emails, extract_contact_phones
 from app.crawler.extractors.links import extract_links
 from app.crawler.extractors.page import extract_page_data
+from app.crawler.extractors.schema import extract_structured_metadata
 from app.crawler.fingerprint import content_hash, html_hash, structure_hash, text_hash
 from app.crawler.http_crawler import build_http_crawler
 from app.crawler.js_detection import looks_js_rendered
@@ -213,6 +215,9 @@ def _origin(url: str) -> str:
 def _persist_page(*, job_id, host, url, status, content_type, soup, raw_html, method) -> None:
     page_data = extract_page_data(soup, url)
     links = extract_links(soup, url)
+    structured_metadata = extract_structured_metadata(soup, url)
+    contact_emails = extract_contact_emails(soup)
+    contact_phones = extract_contact_phones(soup)
 
     c_hash = content_hash(raw_html)
     h_hash = html_hash(soup)
@@ -241,6 +246,9 @@ def _persist_page(*, job_id, host, url, status, content_type, soup, raw_html, me
             url=url,
             http_status=status,
             page_data=page_data,
+            structured_metadata=structured_metadata,
+            contact_emails=contact_emails,
+            contact_phones=contact_phones,
             content_hash=c_hash,
             html_hash=h_hash,
             text_hash=t_hash,

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.crawler.extractors.links import LinkData
 from app.crawler.extractors.page import PageData
+from app.crawler.extractors.schema import StructuredMetadata
 from app.crawler.normalize import normalize_host
 from app.db.models import (
     CrawlError,
@@ -86,6 +87,9 @@ def record_page(
     url: str,
     http_status: int | None,
     page_data: PageData,
+    structured_metadata: StructuredMetadata,
+    contact_emails: list[str],
+    contact_phones: list[str],
     content_hash: str | None,
     html_hash: str | None,
     text_hash: str | None,
@@ -106,6 +110,15 @@ def record_page(
         robots_meta_noindex=page_data.robots_meta_noindex,
         robots_meta_nofollow=page_data.robots_meta_nofollow,
         is_indexable=not page_data.robots_meta_noindex,
+        schema_org=structured_metadata.schema_org,
+        open_graph=structured_metadata.open_graph,
+        twitter_card=structured_metadata.twitter_card,
+        images=structured_metadata.images,
+        pdf_links=structured_metadata.pdf_links,
+        social_links=structured_metadata.social_links,
+        embeds=structured_metadata.embeds,
+        contact_emails=contact_emails,
+        contact_phones=contact_phones,
         content_hash=content_hash,
         html_hash=html_hash,
         text_hash=text_hash,

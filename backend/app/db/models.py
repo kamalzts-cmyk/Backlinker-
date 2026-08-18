@@ -182,6 +182,22 @@ class Page(TimestampMixin, Base):
     html_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     text_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     structure_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Phase 2: structured metadata + deterministic contact-info candidates
+    # (docs/CRAWLER.md §4 Page-level). JSON-LD only for schema_org -- see
+    # app/crawler/extractors/schema.py. contact_emails/contact_phones are
+    # raw candidates found in page text, not verified `contacts` rows --
+    # that association/verification is Phase 8/9.
+    schema_org: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    open_graph: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    twitter_card: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    images: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    pdf_links: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    social_links: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    embeds: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    contact_emails: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    contact_phones: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     crawled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     domain: Mapped[Domain] = relationship(back_populates="pages")

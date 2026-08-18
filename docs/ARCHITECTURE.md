@@ -203,7 +203,7 @@ phase. "Frontend renders" is never sufficient on its own.
 |---|---|---|
 | 0 | This architecture package + repo/Docker/DB skeleton | `docker compose up` brings up Postgres/Redis/Ollama; Alembic runs against an empty DB |
 | 1 ✅ | Real crawler (robots, sitemap, HTTP+Playwright, frontier, politeness) | **Done.** Crawled a live public site (pypi.org) end-to-end with real Postgres rows manually inspected; 27 passing tests including 4 real integration tests (local fixture server + real Postgres, no mocks) covering the fixture site, a broken-link 404, robots.txt caching, and HTTP→Playwright JS escalation. See `backend/app/crawler/`. |
-| 2 | Full page/link extraction (metadata, schema, contacts, entities) | Extraction fields in `CRAWLER.md` §Page-level/Link-level all populated on a real crawl |
+| 2 ✅ | Full page/link extraction (metadata, schema, contacts, entities) | **Done** for the deterministic subset: schema.org (JSON-LD), OpenGraph, Twitter Cards, images+alt, PDF links, social profile links, embeds, and candidate contact emails/phones from page text — all verified against a real crawl (pypi.org) with rows inspected in Postgres, plus 15 new tests (6 integration, real HTTP + real DB). AI-assisted entity extraction (Organization/Person/Product/Service/Location per `PRODUCT_SPEC.md` §4.1) is deliberately deferred to Phase 13 (AI layer) rather than faked here — see `backend/README.md`. |
 | 3 | Backlink verification pipeline | A known real backlink is discovered and reaches `VERIFIED` with correct anchor/rel/context |
 | 4 | Common Crawl connector | CDX query returns candidate URLs for a real domain; candidates flow into verification |
 | 5 | Competitor engine | Two real competitor domains crawled; shared/exclusive backlink sets computed correctly |
