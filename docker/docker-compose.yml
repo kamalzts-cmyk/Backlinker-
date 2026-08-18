@@ -1,0 +1,50 @@
+name: linkintel
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-linkintel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-linkintel}
+      POSTGRES_DB: ${POSTGRES_DB:-linkintel}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-linkintel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  # backend, worker, and frontend are added in Phase 1+ once the
+  # corresponding application code exists (see PRODUCT_SPEC.md §9 and
+  # docs/ARCHITECTURE.md §9 for exit criteria). Intentionally omitted
+  # here rather than stubbed with placeholder images/fake app code.
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
