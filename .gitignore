@@ -20,6 +20,7 @@ frontend/.turbo/
 
 # Crawl artifacts (not committed — real data lives in the database)
 crawler_snapshots/
+backend/storage/
 *.log
 
 # OS / editor

@@ -26,12 +26,18 @@ default provider) · Docker.
 
 ## Status
 
-No application code yet — this is intentional. Per the build order in
-`PRODUCT_SPEC.md` §9, Phase 1 (a real, tested crawler against fixture and
-live pages) is the next milestone, not the dashboard. `docker/` contains
-the base infrastructure skeleton (Postgres/Redis/Ollama) so Phase 1 can
-start immediately against a running local environment.
+**Phase 0 (architecture) and Phase 1 (real crawler) are done.** Phase 1
+is a working, tested, two-tier crawler (Crawlee HTTP-first with a
+Playwright fallback) — see [`backend/README.md`](./backend/README.md) for
+what's implemented, how to run it, and known follow-ups. 27 tests pass,
+including real integration tests against a local fixture server and a
+real Postgres database (no mocks), plus a manually-verified live crawl of
+a real public site. Everything past the crawl layer (API, intelligence
+engines, frontend) is still empty pending its own phase, per the build
+order in `PRODUCT_SPEC.md` §9 — no premature scaffolding ahead of working
+code underneath it.
 
 ```
-docker compose -f docker/docker-compose.yml up
+docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama
+cd backend && pip install -e ".[dev]" && pytest app/tests -v
 ```

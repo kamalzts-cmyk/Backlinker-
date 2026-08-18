@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>LinkIntel Fixture Site</title>
+  <meta name="description" content="Local fixture site for crawler extractor tests.">
+  <link rel="canonical" href="/index.html">
+</head>
+<body>
+  <nav id="site-nav">
+    <a href="/index.html">Home</a>
+    <a href="/author.html">Author</a>
+  </nav>
+  <main>
+    <h1>LinkIntel Fixture Site</h1>
+    <p>This is a small local fixture site used to test page and link extraction
+       against known, controlled HTML instead of the live web.</p>
+
+    <h2>External link examples</h2>
+    <p>According to <a href="https://example.com/follow-target">Example Corp</a>,
+       small businesses benefit from good backlinks.</p>
+    <p>See this <a href="https://example.com/nofollow-target" rel="nofollow">nofollow reference</a>
+       for more context.</p>
+    <p>This is a <a href="https://example.com/sponsored-target" rel="sponsored">sponsored link</a>.</p>
+    <p>User-submitted: <a href="https://example.com/ugc-target" rel="ugc">community link</a>.</p>
+    <p>Broken resource: <a href="/does-not-exist.html">old resource</a>.</p>
+    <p>Contact via <a href="mailto:obfuscated@example.com">email</a> or javascript:void(0) below.</p>
+  </main>
+  <footer id="site-footer">
+    <a href="https://example.com/footer-target">Footer link</a>
+  </footer>
+</body>
+</html>

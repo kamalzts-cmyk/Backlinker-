@@ -202,7 +202,7 @@ phase. "Frontend renders" is never sufficient on its own.
 | Phase | Deliverable | Exit criteria |
 |---|---|---|
 | 0 | This architecture package + repo/Docker/DB skeleton | `docker compose up` brings up Postgres/Redis/Ollama; Alembic runs against an empty DB |
-| 1 | Real crawler (robots, sitemap, HTTP+Playwright, frontier, politeness) | Crawl a real public site end-to-end; pages/links/errors land in DB, verified by manual inspection |
+| 1 ✅ | Real crawler (robots, sitemap, HTTP+Playwright, frontier, politeness) | **Done.** Crawled a live public site (pypi.org) end-to-end with real Postgres rows manually inspected; 27 passing tests including 4 real integration tests (local fixture server + real Postgres, no mocks) covering the fixture site, a broken-link 404, robots.txt caching, and HTTP→Playwright JS escalation. See `backend/app/crawler/`. |
 | 2 | Full page/link extraction (metadata, schema, contacts, entities) | Extraction fields in `CRAWLER.md` §Page-level/Link-level all populated on a real crawl |
 | 3 | Backlink verification pipeline | A known real backlink is discovered and reaches `VERIFIED` with correct anchor/rel/context |
 | 4 | Common Crawl connector | CDX query returns candidate URLs for a real domain; candidates flow into verification |
@@ -282,3 +282,20 @@ phase. "Frontend renders" is never sufficient on its own.
     integration work even without *sending* automation. Scope Phase 15
     explicitly as "human clicks send, system tracks the rest" so it isn't
     quietly treated as full send automation.
+11. **(Confirmed in Phase 1 build) Crawlee's default HTTP client does not
+    reliably honor environment-based egress-proxy configuration** on
+    every platform -- it silently fails the CONNECT tunnel where `httpx`
+    succeeds using the same env vars. Any deployment sitting behind a
+    corporate/CI egress proxy should default to Crawlee's `HttpxHttpClient`
+    rather than its default (`app/crawler/http_crawler.py` already does
+    this) instead of debugging this per-environment later.
+12. **(Confirmed in Phase 1 build) The HTTP→Playwright escalation needs
+    `always_enqueue=True` on the re-crawl request.** Crawlee dedups
+    requests by URL-derived unique key within a run; a URL the HTTP pass
+    already "handled" (even if our own handler chose to escalate rather
+    than extract) is silently skipped by the Playwright pass's queue
+    unless the escalated request is explicitly marked `always_enqueue`.
+    Getting this wrong doesn't raise an error -- it just silently crawls
+    zero pages, which is the kind of failure mode that's easy to miss
+    without an integration test asserting on real DB rows (see
+    `app/tests/integration/test_crawl_js_escalation.py`).
