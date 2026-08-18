@@ -1,8 +1,9 @@
-"""Phase 1 models: the crawl layer only (see docs/DATABASE.md).
+"""Crawl layer (Phase 1-2) + backlink engine (Phase 3) models. See
+docs/DATABASE.md.
 
-Backlink/prospect/contact/outreach tables are deliberately not modeled yet
--- they belong to later phases and depend on data this layer produces.
-Adding them now, empty, would be exactly the kind of premature scaffolding
+Prospect/contact/outreach tables are deliberately not modeled yet -- they
+belong to later phases and depend on data these layers produce. Adding
+them now, empty, would be exactly the kind of premature scaffolding
 PRODUCT_SPEC.md warns against.
 """
 
@@ -19,6 +20,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -62,6 +64,15 @@ class LinkPosition(str, enum.Enum):
     BODY = "body"
     SIDEBAR = "sidebar"
     UNKNOWN = "unknown"
+
+
+# Shared column type: reused (not re-instantiated) everywhere a
+# link_position column is needed. SQLAlchemy/Alembic track "has this PG
+# enum type already been created" by object identity, not by name -- two
+# separate `Enum(LinkPosition, name="link_position")` instances across
+# different tables produce two CREATE TYPE statements for the same name
+# and the second one fails.
+_LINK_POSITION_TYPE = Enum(LinkPosition, name="link_position")
 
 
 def _uuid_pk() -> Mapped[uuid.UUID]:
@@ -226,10 +237,152 @@ class PageLink(TimestampMixin, Base):
     rel_ugc: Mapped[bool] = mapped_column(Boolean, default=False)
     target_blank: Mapped[bool] = mapped_column(Boolean, default=False)
     link_position: Mapped[LinkPosition] = mapped_column(
-        Enum(LinkPosition, name="link_position"), default=LinkPosition.UNKNOWN
+        _LINK_POSITION_TYPE, default=LinkPosition.UNKNOWN
     )
     is_internal: Mapped[bool] = mapped_column(Boolean, default=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     source_page: Mapped[Page] = relationship(back_populates="outbound_links")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: backlink discovery + direct verification (see docs/DATABASE.md
+# §Backlink engine, docs/CRAWLER.md §6, PRODUCT_SPEC.md §4.2).
+#
+# Two-stage pipeline: a BacklinkCandidate ("source_url might link to
+# target_url", from some discovery mechanism) is *directly verified* by
+# crawling source_url ourselves -- only that crawl can produce a VERIFIED
+# BacklinkObservation. Observations are append-only (one per verification
+# run); Backlink is the derived current-state row per (source_url,
+# target_url) pair, giving first_seen/last_seen history for free.
+# ---------------------------------------------------------------------------
+
+
+class BacklinkSourceType(str, enum.Enum):
+    """How a candidate URL was discovered. Distinct from an observation's
+    verification method, which is always DIRECT_CRAWL once VERIFIED --
+    see PRODUCT_SPEC.md §2's provenance/confidence table.
+    """
+
+    DIRECT_CRAWL = "direct_crawl"
+    COMMON_CRAWL = "common_crawl"
+    SEARCH_DISCOVERED = "search_discovered"
+    USER_PROVIDED = "user_provided"
+
+
+# Shared instance for the same reason as _LINK_POSITION_TYPE above -- used
+# on both BacklinkCandidate.source_type and BacklinkObservation.source_type.
+_BACKLINK_SOURCE_TYPE = Enum(BacklinkSourceType, name="backlink_source_type")
+
+
+class BacklinkCandidateStatus(str, enum.Enum):
+    PENDING = "pending"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+
+
+class BacklinkRejectionReason(str, enum.Enum):
+    SOURCE_UNREACHABLE = "source_unreachable"
+    TARGET_NOT_FOUND = "target_not_found"
+    BLOCKED = "blocked"
+
+
+class BacklinkLinkType(str, enum.Enum):
+    """Deterministic subset only -- NAVIGATION/FOOTER come from
+    link_position, SPONSORED/UGC from rel attributes. The fuller taxonomy
+    in PRODUCT_SPEC.md §4.2 (guest_post, directory, citation, resource_page,
+    ...) requires content judgment and is AI-assisted link-context
+    classification (Phase 12), not guessed here.
+    """
+
+    NAVIGATION = "navigation"
+    FOOTER = "footer"
+    SPONSORED = "sponsored"
+    UGC = "ugc"
+    UNKNOWN = "unknown"
+
+
+class BacklinkCandidate(TimestampMixin, Base):
+    __tablename__ = "backlink_candidates"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    source_url: Mapped[str] = mapped_column(String(2048))
+    target_url: Mapped[str] = mapped_column(String(2048))
+    target_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    source_type: Mapped[BacklinkSourceType] = mapped_column(_BACKLINK_SOURCE_TYPE)
+    discovery_method: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[BacklinkCandidateStatus] = mapped_column(
+        Enum(BacklinkCandidateStatus, name="backlink_candidate_status"),
+        default=BacklinkCandidateStatus.PENDING,
+    )
+    rejection_reason: Mapped[BacklinkRejectionReason | None] = mapped_column(
+        Enum(BacklinkRejectionReason, name="backlink_rejection_reason"), nullable=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    target_domain: Mapped[Domain] = relationship()
+    observations: Mapped[list["BacklinkObservation"]] = relationship(back_populates="candidate")
+
+
+class BacklinkObservation(TimestampMixin, Base):
+    """Append-only: one row per verification run. See docs/DATABASE.md
+    §Backlink engine -- this is what powers "follow -> nofollow" history.
+    """
+
+    __tablename__ = "backlink_observations"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("backlink_candidates.id"), nullable=True, index=True
+    )
+    source_url: Mapped[str] = mapped_column(String(2048))
+    source_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    target_url: Mapped[str] = mapped_column(String(2048))
+    target_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    anchor_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    surrounding_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rel_nofollow: Mapped[bool] = mapped_column(Boolean, default=False)
+    rel_sponsored: Mapped[bool] = mapped_column(Boolean, default=False)
+    rel_ugc: Mapped[bool] = mapped_column(Boolean, default=False)
+    link_position: Mapped[LinkPosition] = mapped_column(_LINK_POSITION_TYPE)
+    link_type: Mapped[BacklinkLinkType] = mapped_column(
+        Enum(BacklinkLinkType, name="backlink_link_type"), default=BacklinkLinkType.UNKNOWN
+    )
+    source_canonical_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    source_http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_is_indexable: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Provenance columns per PRODUCT_SPEC.md §3.1 / docs/DATABASE.md
+    # §Conventions. source_type here is the *verification* method
+    # (always DIRECT_CRAWL for a VERIFIED row); see BacklinkCandidate for
+    # discovery lineage.
+    source_type: Mapped[BacklinkSourceType] = mapped_column(_BACKLINK_SOURCE_TYPE)
+    confidence_score: Mapped[int] = mapped_column(Integer)
+    crawl_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("crawl_requests.id"), nullable=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    candidate: Mapped[BacklinkCandidate | None] = relationship(back_populates="observations")
+
+
+class Backlink(TimestampMixin, Base):
+    """Current-state denormalized view of a source->target pair, always
+    derived from BacklinkObservation -- never hand-edited. See
+    docs/DATABASE.md §Backlink engine.
+    """
+
+    __tablename__ = "backlinks"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    source_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    target_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    source_url: Mapped[str] = mapped_column(String(2048))
+    target_url: Mapped[str] = mapped_column(String(2048))
+    latest_observation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("backlink_observations.id"))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    latest_observation: Mapped[BacklinkObservation] = relationship()
+
+    __table_args__ = (UniqueConstraint("source_url", "target_url", name="uq_backlinks_source_target"),)

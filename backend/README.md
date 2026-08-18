@@ -1,11 +1,12 @@
 # backend
 
-FastAPI project. **Phase 1 (real crawler) and Phase 2 (full page/link
-extraction) are implemented and tested** — see `app/crawler/`. The API
-layer (`app/api/`), the intelligence engines (`app/engines/`), and
-everything past the crawl layer are still empty pending their own phases
-(`../PRODUCT_SPEC.md` §9, `../docs/ARCHITECTURE.md` §9) — no premature
-scaffolding ahead of working code underneath it.
+FastAPI project. **Phase 1 (real crawler), Phase 2 (full page/link
+extraction), and Phase 3 (backlink verification) are implemented and
+tested** — see `app/crawler/` and `app/engines/backlink/`. The API layer
+(`app/api/`) and the rest of the intelligence engines
+(`app/engines/{competitor,prospect,contact,...}/`) are still empty
+pending their own phases (`../PRODUCT_SPEC.md` §9, `../docs/ARCHITECTURE.md`
+§9) — no premature scaffolding ahead of working code underneath it.
 
 ## What's here
 
@@ -17,16 +18,25 @@ scaffolding ahead of working code underneath it.
   structured metadata (schema.org/OpenGraph/Twitter Cards/images/PDF and
   social links/embeds), and candidate contact emails/phones. See
   `../docs/CRAWLER.md` for the design.
+- `app/engines/backlink/` — the direct backlink verification pipeline:
+  given a `BacklinkCandidate` (source_url claiming to link to target_url),
+  crawl source_url for real (reusing the Phase 1/2 crawler -- verifying a
+  candidate is just a single-page crawl) and check whether the target
+  link is actually there, producing a `VERIFIED` or `REJECTED`
+  `BacklinkObservation` plus a derived current-state `backlinks` row with
+  first/last-seen. See `../docs/CRAWLER.md` §6.
 - `app/db/models.py` — the crawl-layer schema (domains, crawl_jobs,
-  crawl_requests, crawl_errors, pages, page_links). See
-  `../docs/DATABASE.md`.
+  crawl_requests, crawl_errors, pages, page_links) plus the backlink
+  engine schema (backlink_candidates, backlink_observations, backlinks).
+  See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 42 tests, all real: unit tests for normalization/
-  fingerprinting/JS-detection/extraction against local HTML fixtures
-  (`app/tests/fixtures/html/`), and integration tests that run the actual
-  crawler against a local fixture HTTP server (`app/tests/fixtures/server.py`)
-  and a real Postgres test database — no mocked HTTP, no mocked DB.
+- `app/tests/` — 51 tests, all real: unit tests for normalization/
+  fingerprinting/JS-detection/extraction/classification against local
+  HTML fixtures (`app/tests/fixtures/html/`), and integration tests that
+  run the actual crawler and backlink verification pipeline against a
+  local fixture HTTP server (`app/tests/fixtures/server.py`) and a real
+  Postgres test database — no mocked HTTP, no mocked DB.
 
 ## Running it
 
@@ -76,3 +86,14 @@ asyncio.run(run_crawl("https://example.com", max_pages=10))
   environment-based egress-proxy configuration; `app/crawler/http_crawler.py`
   uses Crawlee's `HttpxHttpClient` instead. Keep that if you touch this
   file — see `../docs/ARCHITECTURE.md` risk #11.
+- Backlink discovery (Common Crawl + search-pattern candidates feeding
+  `BacklinkCandidate` rows) is Phase 4/7, not built yet — Phase 3 only
+  implements verification given a candidate. `classify_link_type`
+  (`app/engines/backlink/classify.py`) only labels NAVIGATION/FOOTER/
+  SPONSORED/UGC deterministically; the fuller taxonomy (guest_post,
+  directory, citation, ...) needs content judgment and is Phase 12 AI
+  work, not guessed here.
+- If you add a new table that reuses an existing named Postgres enum
+  type (e.g. another `link_position` column), autogenerate's migration
+  needs a hand-edit — see `../docs/ARCHITECTURE.md` risk #13 and
+  `alembic/versions/4d4f7236ee73_*.py` for the pattern.
