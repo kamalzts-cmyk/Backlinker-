@@ -169,3 +169,27 @@ class OutreachStrategyOut(BaseModel):
     expected_link_probability: int | None
     difficulty: str
     computed_at: datetime
+
+
+class CampaignEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    stage: str
+    detail: str | None
+    occurred_at: datetime
+
+
+class CampaignOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    outreach_strategy_id: uuid.UUID
+    contact_id: uuid.UUID
+    target_url: str
+    current_stage: str | None
+    created_at: datetime
+
+
+class CampaignDetailOut(CampaignOut):
+    events: list[CampaignEventOut]

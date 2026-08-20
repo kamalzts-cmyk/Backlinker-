@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.api import (
     backlinks,
+    campaigns,
     competitors,
     contacts,
     crawl,
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(guest_posts.router)
     app.include_router(opportunities.router)
     app.include_router(outreach.router)
+    app.include_router(campaigns.router)
     return app
 
 

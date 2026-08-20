@@ -208,3 +208,51 @@ def test_outreach_strategy_404_for_unknown_contact():
     response = client.get("/outreach/strategy/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_campaigns_endpoints_track_a_real_funnel():
+    with FixtureServer() as base_url:
+        contacts = await discover_contacts_for_domain(f"{base_url}/contact.html", max_pages=1)
+    contact_id = str(contacts[0].id)
+
+    strategy_response = client.post(
+        "/outreach/strategy", params={"contact_id": contact_id, "use_ai": "false"}
+    )
+    strategy_id = strategy_response.json()["id"]
+
+    create_response = client.post(
+        "/campaigns",
+        json={"outreach_strategy_id": strategy_id, "target_url": "https://example.com/asset"},
+    )
+    assert create_response.status_code == 201
+    campaign_id = create_response.json()["id"]
+    assert create_response.json()["current_stage"] is None
+
+    event_response = client.post(
+        f"/campaigns/{campaign_id}/events", json={"stage": "sent", "detail": "sent via Gmail"}
+    )
+    assert event_response.status_code == 200
+    assert event_response.json()["stage"] == "sent"
+
+    detail_response = client.get(f"/campaigns/{campaign_id}")
+    assert detail_response.status_code == 200
+    body = detail_response.json()
+    assert body["current_stage"] == "sent"
+    assert len(body["events"]) == 1
+
+    check_response = client.post(f"/campaigns/{campaign_id}/check-backlink")
+    assert check_response.status_code == 200
+    assert check_response.json()["current_stage"] == "sent"  # no matching backlink yet
+
+
+def test_create_campaign_404_for_unknown_strategy():
+    response = client.post(
+        "/campaigns",
+        json={
+            "outreach_strategy_id": "00000000-0000-0000-0000-000000000000",
+            "target_url": "https://example.com/asset",
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"

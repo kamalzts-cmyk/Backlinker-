@@ -746,3 +746,95 @@ class OutreachStrategy(TimestampMixin, Base):
         Enum(OutreachDifficulty, name="outreach_difficulty")
     )
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Phase 15: campaign funnel tracking (see PRODUCT_SPEC.md §4.7):
+#
+#   "Campaigns track the full funnel and its conversion at each step:
+#   sent -> delivered -> bounced -> opened -> clicked -> replied ->
+#   positive/negative reply -> unsubscribed -> published -> backlink
+#   detected -> backlink verified ... We do not build automated sending
+#   in v1."
+#
+# This project builds exactly that: a Campaign record a human creates
+# from an OutreachStrategy once *they* have sent the pitch through their
+# own email client (never this app -- there is no send_email function
+# anywhere in this codebase), plus a CampaignEvent per funnel-stage
+# transition the human (or a real check, for the last two stages)
+# records. `target_url` is supplied by the human at campaign-creation
+# time -- it's the asset *they* are pitching, and this project has no
+# content-asset-matching table (Phase 4.8) to derive it from, so it is
+# never guessed.
+#
+# `check_backlink_detected` (app/engines/campaigns/funnel.py) is the one
+# non-manual transition: it queries the real `backlinks` table (Phase 3)
+# for a link from this contact's domain to `target_url`. Because that
+# table, by construction, only ever holds links that already passed
+# direct verification (see Backlink's docstring), a match there means
+# BACKLINK_DETECTED and BACKLINK_VERIFIED are true at the same instant --
+# not two separable moments the way a passive monitoring crawl (Phase 16)
+# might observe them. Both events are recorded together, with a note
+# saying why, rather than faking a gap between them.
+# ---------------------------------------------------------------------------
+
+
+class CampaignFunnelStage(str, enum.Enum):
+    SENT = "sent"
+    DELIVERED = "delivered"
+    BOUNCED = "bounced"
+    OPENED = "opened"
+    CLICKED = "clicked"
+    REPLIED = "replied"
+    POSITIVE_REPLY = "positive_reply"
+    NEGATIVE_REPLY = "negative_reply"
+    UNSUBSCRIBED = "unsubscribed"
+    PUBLISHED = "published"
+    BACKLINK_DETECTED = "backlink_detected"
+    BACKLINK_VERIFIED = "backlink_verified"
+
+
+# Shared instance, reused on both Campaign.current_stage and
+# CampaignEvent.stage -- see _LINK_POSITION_TYPE's comment earlier in
+# this file (docs/ARCHITECTURE.md risk #13) for why a fresh
+# `Enum(CampaignFunnelStage, name=...)` per column breaks Alembic
+# autogenerate.
+_CAMPAIGN_FUNNEL_STAGE_TYPE = Enum(CampaignFunnelStage, name="campaign_funnel_stage")
+
+
+class Campaign(TimestampMixin, Base):
+    __tablename__ = "campaigns"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    outreach_strategy_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("outreach_strategies.id"), index=True
+    )
+    contact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contacts.id"), index=True)
+    # The asset URL the human is pitching -- their own, supplied by them,
+    # never generated (see module comment above).
+    target_url: Mapped[str] = mapped_column(String(2048))
+    # None until the first event is recorded (a Campaign row can exist as
+    # "drafted, not yet sent" -- creating it is not itself a send).
+    current_stage: Mapped[CampaignFunnelStage | None] = mapped_column(
+        _CAMPAIGN_FUNNEL_STAGE_TYPE, nullable=True
+    )
+
+    events: Mapped[list["CampaignEvent"]] = relationship(
+        back_populates="campaign", order_by="CampaignEvent.occurred_at"
+    )
+
+
+class CampaignEvent(TimestampMixin, Base):
+    """One row per funnel-stage transition -- full history kept, not
+    overwritten in place, same pattern as EmailVerification.
+    """
+
+    __tablename__ = "campaign_events"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    stage: Mapped[CampaignFunnelStage] = mapped_column(_CAMPAIGN_FUNNEL_STAGE_TYPE)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    campaign: Mapped[Campaign] = relationship(back_populates="events")

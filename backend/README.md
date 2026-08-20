@@ -1,14 +1,16 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-14 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-15 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
 competitor/link-gap engine, a real API layer, contact intelligence,
 email verification, guest-post intelligence, opportunity scoring,
-evidence-on-every-opportunity, an AI provider layer, and outreach
-strategy generation) are implemented and tested** — see `app/crawler/`,
+evidence-on-every-opportunity, an AI provider layer, outreach strategy
+generation, and campaign funnel tracking) are implemented and tested** —
+see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
 `app/engines/contact/`, `app/engines/guest_post/`,
-`app/engines/scoring/`, `app/engines/ai/`, `app/engines/outreach/`, and
+`app/engines/scoring/`, `app/engines/ai/`, `app/engines/outreach/`,
+`app/engines/campaigns/`, and
 `app/api/`. Run it with `uvicorn
 app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
 now — it needs a search-backend decision (paid API vs. self-hosted vs.
@@ -110,9 +112,22 @@ before depending on it in production.
   excludes automated sending from v1); `recommended_content_asset` is
   always `None` (needs a user-content-asset table that doesn't exist —
   Phase 4.8, not built).
+- `app/engines/campaigns/funnel.py` — campaign funnel tracking (Phase 15,
+  `PRODUCT_SPEC.md` §4.7): a `Campaign` is a record a human creates
+  *after* pitching a contact through their own email client — there is
+  no `send_email` function anywhere in this codebase. `record_event`
+  logs each real funnel-stage transition (sent/delivered/bounced/opened/
+  clicked/replied/positive_reply/negative_reply/unsubscribed/published/
+  backlink_detected/backlink_verified) as the human reports it, with no
+  ordering enforced. `check_backlink_detected` is the one non-manual
+  step: it queries the real Phase 3 `backlinks` table for a link
+  matching the human-supplied `target_url`; since that table only ever
+  holds already-verified links, BACKLINK_DETECTED and BACKLINK_VERIFIED
+  are recorded together rather than faking a gap between them.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`,
-  `/contacts`, `/guest-posts`, `/opportunities`, `/outreach`) since
+  `/contacts`, `/guest-posts`, `/opportunities`, `/outreach`,
+  `/campaigns`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
   `app/api/deps.py` (FastAPI runs sync route functions in a threadpool).
   Errors follow `../docs/API.md`'s `{"error": {"code","message","detail"}}`
@@ -122,19 +137,20 @@ before depending on it in production.
   schema (backlink_candidates, backlink_observations, backlinks), the
   competitor/link-gap schema (competitor_relationships,
   link_gap_opportunities), the contact schema (contacts,
-  contact_sources), and the outreach schema (outreach_strategies). See
+  contact_sources), the outreach schema (outreach_strategies), and the
+  campaign schema (campaigns, campaign_events). See
   `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 121 tests, all real except the Common Crawl and Ollama
+- `app/tests/` — 125 tests, all real except the Common Crawl and Ollama
   HTTP layers (see the Phase 4 and Phase 13 caveats above): unit tests
   for normalization/fingerprinting/JS-detection/extraction/
   classification/CDX-parsing against local HTML fixtures
   (`app/tests/fixtures/html/`), unit tests for `OllamaProvider`'s request/
   response handling against `respx`-mocked HTTP, and integration tests
   that run the actual crawler, backlink verification, competitor/
-  link-gap, contact/guest-post/opportunity, and outreach-strategy
-  pipelines against a local fixture HTTP server
+  link-gap, contact/guest-post/opportunity, outreach-strategy, and
+  campaign-funnel pipelines against a local fixture HTTP server
   (`app/tests/fixtures/server.py`, which can bind multiple loopback
   addresses to simulate genuinely distinct source domains) and a real
   Postgres test database — no mocked HTTP, no mocked DB, anywhere except

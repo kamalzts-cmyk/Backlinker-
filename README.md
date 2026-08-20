@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and 8-14 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6 and 8-15 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -79,8 +79,16 @@ infrastructure:
   left blank rather than fabricated when unavailable. No copy drafting
   or automated sending is built — the product spec is explicit that v1
   stops at a human-reviewed strategy.
+- Campaign funnel tracking: a human records that they've pitched a
+  contact (through their own email client — there is no send-email
+  function anywhere in this codebase) and logs each real funnel-stage
+  transition as it happens (sent, delivered, bounced, opened, clicked,
+  replied, positive/negative reply, unsubscribed, published). The one
+  automatic step checks the real verified-backlinks table for a match
+  and advances the funnel only when it finds one — never fabricated
+  progress.
 
-121 tests pass, almost all against real infrastructure (a real fixture
+125 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
 against real public sites/domains). Three honest caveats, not glossed
@@ -98,7 +106,7 @@ between separate crawl jobs in the same process — see
 
 See [`backend/README.md`](./backend/README.md) for exactly what's
 implemented, how to run it, and the full list of known follow-ups.
-Everything past this (campaigns, monitoring, reports, GEO intelligence,
+Everything past this (backlink monitoring, reports, GEO intelligence,
 frontend) is still empty pending its own phase, per the build order in
 `PRODUCT_SPEC.md` §9 — no premature scaffolding ahead of working code
 underneath it.
