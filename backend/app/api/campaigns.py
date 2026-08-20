@@ -1,7 +1,8 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -36,6 +37,19 @@ def create_campaign_endpoint(body: CreateCampaignIn, db: Session = Depends(get_d
         )
     except ValueError as exc:
         raise NotFoundError(str(exc)) from exc
+
+
+@router.get("", response_model=list[CampaignOut])
+def list_campaigns(
+    contact_id: uuid.UUID = Query(...), db: Session = Depends(get_db)
+) -> list[Campaign]:
+    return list(
+        db.scalars(
+            select(Campaign)
+            .where(Campaign.contact_id == contact_id)
+            .order_by(Campaign.created_at.desc())
+        )
+    )
 
 
 @router.get("/{campaign_id}", response_model=CampaignDetailOut)

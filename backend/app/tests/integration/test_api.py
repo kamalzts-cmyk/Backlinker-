@@ -372,6 +372,49 @@ def test_geo_observations_endpoints_record_and_list_a_real_manual_observation():
     assert rows[0]["source_url"] == "https://geo-api-example.com/guide"
 
 
+@pytest.mark.asyncio
+async def test_contacts_discover_endpoint_runs_a_real_crawl():
+    with FixtureServer() as base_url:
+        response = client.post(
+            "/contacts/discover", json={"start_url": f"{base_url}/contact.html", "max_pages": 1}
+        )
+    assert response.status_code == 201
+    rows = response.json()
+    assert {r["email"] for r in rows} == {"info@example.com", "press@example.com"}
+
+
+@pytest.mark.asyncio
+async def test_guest_posts_discover_endpoint_returns_null_when_none_found():
+    with FixtureServer() as base_url:
+        response = client.post(
+            "/guest-posts/discover", json={"start_url": f"{base_url}/contact.html", "max_pages": 1}
+        )
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+@pytest.mark.asyncio
+async def test_campaigns_list_endpoint_filters_by_contact():
+    with FixtureServer() as base_url:
+        contacts = await discover_contacts_for_domain(f"{base_url}/contact.html", max_pages=1)
+    contact_id = str(contacts[0].id)
+
+    strategy_response = client.post(
+        "/outreach/strategy", params={"contact_id": contact_id, "use_ai": "false"}
+    )
+    strategy_id = strategy_response.json()["id"]
+    client.post(
+        "/campaigns",
+        json={"outreach_strategy_id": strategy_id, "target_url": "https://example.com/asset"},
+    )
+
+    response = client.get("/campaigns", params={"contact_id": contact_id})
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["contact_id"] == contact_id
+
+
 def test_geo_observations_endpoint_rejects_cited_without_source_url():
     from app.crawler.repository import get_or_create_domain
 
