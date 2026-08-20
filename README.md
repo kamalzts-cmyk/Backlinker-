@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and 8-15 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6 and 8-16 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -87,8 +87,13 @@ infrastructure:
   automatic step checks the real verified-backlinks table for a match
   and advances the funnel only when it finds one — never fabricated
   progress.
+- Backlink monitoring: re-verifies a tracked backlink for real and diffs
+  the result against its last known state, producing explicit
+  before/after alerts for exactly what changed (link attributes, anchor
+  text, source status, canonical URL) — never a bare "something
+  changed." A link that's gone is marked lost rather than silently kept.
 
-125 tests pass, almost all against real infrastructure (a real fixture
+131 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
 against real public sites/domains). Three honest caveats, not glossed
@@ -106,8 +111,8 @@ between separate crawl jobs in the same process — see
 
 See [`backend/README.md`](./backend/README.md) for exactly what's
 implemented, how to run it, and the full list of known follow-ups.
-Everything past this (backlink monitoring, reports, GEO intelligence,
-frontend) is still empty pending its own phase, per the build order in
+Everything past this (reports/exports, GEO intelligence, frontend) is
+still empty pending its own phase, per the build order in
 `PRODUCT_SPEC.md` §9 — no premature scaffolding ahead of working code
 underneath it.
 

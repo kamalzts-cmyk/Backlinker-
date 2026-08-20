@@ -193,3 +193,15 @@ class CampaignOut(BaseModel):
 
 class CampaignDetailOut(CampaignOut):
     events: list[CampaignEventOut]
+
+
+class BacklinkMonitoringEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    backlink_id: uuid.UUID
+    change_type: str
+    before_state: dict | None
+    after_state: dict | None
+    detail: str
+    detected_at: datetime

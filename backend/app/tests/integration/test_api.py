@@ -256,3 +256,42 @@ def test_create_campaign_404_for_unknown_strategy():
     )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_backlink_recheck_endpoint_detects_no_change_on_a_stable_link():
+    from app.crawler.repository import get_or_create_domain
+
+    with FixtureServer() as base_url:
+        with session_scope() as session:
+            target_domain = get_or_create_domain(session, raw_host="example.com")
+            candidate = create_candidate(
+                session,
+                source_url=f"{base_url}/index.html",
+                target_url="https://example.com/follow-target",
+                target_domain_id=target_domain.id,
+                source_type=BacklinkSourceType.USER_PROVIDED,
+            )
+            candidate_id = candidate.id
+
+        observation = await verify_candidate(candidate_id)
+        assert observation is not None
+
+        backlinks_response = client.get(
+            "/backlinks", params={"target_domain_id": str(target_domain.id)}
+        )
+        backlink_id = backlinks_response.json()[0]["id"]
+
+        recheck_response = client.post(f"/backlinks/{backlink_id}/recheck")
+        assert recheck_response.status_code == 200
+        assert recheck_response.json() == []  # nothing changed -- same fixture content
+
+        events_response = client.get(f"/backlinks/{backlink_id}/monitoring-events")
+        assert events_response.status_code == 200
+        assert events_response.json() == []
+
+
+def test_backlink_recheck_404_for_unknown_backlink():
+    response = client.post("/backlinks/00000000-0000-0000-0000-000000000000/recheck")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"

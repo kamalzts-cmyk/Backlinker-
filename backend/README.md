@@ -1,16 +1,16 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-15 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-16 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
 competitor/link-gap engine, a real API layer, contact intelligence,
 email verification, guest-post intelligence, opportunity scoring,
 evidence-on-every-opportunity, an AI provider layer, outreach strategy
-generation, and campaign funnel tracking) are implemented and tested** —
-see `app/crawler/`,
+generation, campaign funnel tracking, and backlink monitoring) are
+implemented and tested** — see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
 `app/engines/contact/`, `app/engines/guest_post/`,
 `app/engines/scoring/`, `app/engines/ai/`, `app/engines/outreach/`,
-`app/engines/campaigns/`, and
+`app/engines/campaigns/`, `app/engines/monitoring/`, and
 `app/api/`. Run it with `uvicorn
 app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
 now — it needs a search-backend decision (paid API vs. self-hosted vs.
@@ -124,6 +124,18 @@ before depending on it in production.
   matching the human-supplied `target_url`; since that table only ever
   holds already-verified links, BACKLINK_DETECTED and BACKLINK_VERIFIED
   are recorded together rather than faking a gap between them.
+- `app/engines/monitoring/recheck.py` — backlink monitoring (Phase 16,
+  `PRODUCT_SPEC.md` §4.9): re-runs Phase 3's real verification for a
+  tracked backlink's exact source/target pair and diffs the new
+  observation against the previous one, producing explicit before/after
+  `BacklinkMonitoringEvent` rows for whatever actually changed (link
+  attributes, anchor text, source HTTP status, canonical URL) — never a
+  bare "something changed." A rejected re-check (link gone) sets
+  `backlinks.lost_at`, the one documented exception to that table's
+  "never hand-edited" rule. No scheduler is wired up — this is an
+  on-demand primitive (`POST /backlinks/{id}/recheck`) a future
+  cron/worker would call; there's no task-queue infrastructure in this
+  project yet to build one around.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`,
   `/contacts`, `/guest-posts`, `/opportunities`, `/outreach`,
@@ -137,20 +149,22 @@ before depending on it in production.
   schema (backlink_candidates, backlink_observations, backlinks), the
   competitor/link-gap schema (competitor_relationships,
   link_gap_opportunities), the contact schema (contacts,
-  contact_sources), the outreach schema (outreach_strategies), and the
-  campaign schema (campaigns, campaign_events). See
+  contact_sources), the outreach schema (outreach_strategies), the
+  campaign schema (campaigns, campaign_events), and the monitoring
+  schema (backlink_monitoring_events, plus `backlinks.lost_at`). See
   `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 125 tests, all real except the Common Crawl and Ollama
+- `app/tests/` — 131 tests, all real except the Common Crawl and Ollama
   HTTP layers (see the Phase 4 and Phase 13 caveats above): unit tests
   for normalization/fingerprinting/JS-detection/extraction/
   classification/CDX-parsing against local HTML fixtures
   (`app/tests/fixtures/html/`), unit tests for `OllamaProvider`'s request/
   response handling against `respx`-mocked HTTP, and integration tests
   that run the actual crawler, backlink verification, competitor/
-  link-gap, contact/guest-post/opportunity, outreach-strategy, and
-  campaign-funnel pipelines against a local fixture HTTP server
+  link-gap, contact/guest-post/opportunity, outreach-strategy,
+  campaign-funnel, and backlink-monitoring pipelines against a local
+  fixture HTTP server
   (`app/tests/fixtures/server.py`, which can bind multiple loopback
   addresses to simulate genuinely distinct source domains) and a real
   Postgres test database — no mocked HTTP, no mocked DB, anywhere except

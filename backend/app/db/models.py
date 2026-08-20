@@ -372,8 +372,12 @@ class BacklinkObservation(TimestampMixin, Base):
 
 class Backlink(TimestampMixin, Base):
     """Current-state denormalized view of a source->target pair, always
-    derived from BacklinkObservation -- never hand-edited. See
-    docs/DATABASE.md §Backlink engine.
+    derived from BacklinkObservation -- never hand-edited, with one
+    exception added in Phase 16: `lost_at`. A rejected re-verification
+    (the link is gone) produces no new BacklinkObservation -- there's
+    nothing to observe -- so `lost_at` is the one field
+    app/engines/monitoring/recheck.py sets directly, and clears if the
+    link is later found again. See docs/DATABASE.md §Backlink engine.
     """
 
     __tablename__ = "backlinks"
@@ -386,6 +390,7 @@ class Backlink(TimestampMixin, Base):
     latest_observation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("backlink_observations.id"))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    lost_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     latest_observation: Mapped[BacklinkObservation] = relationship()
 
@@ -838,3 +843,56 @@ class CampaignEvent(TimestampMixin, Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     campaign: Mapped[Campaign] = relationship(back_populates="events")
+
+
+# ---------------------------------------------------------------------------
+# Phase 16: backlink monitoring (see PRODUCT_SPEC.md §4.9):
+#
+#   "Verified backlinks are periodically re-crawled. Detect and alert
+#   on: new, lost, attribute changed (follow->nofollow, sponsored
+#   added), target/anchor changed, source page 404/redirected/
+#   deindexed, canonical changed. Alerts show explicit before/after
+#   state, not just 'something changed.'"
+#
+# Reuses the Phase 3 verification pipeline exactly as-is -- re-checking
+# a backlink is just re-running candidate verification for the same
+# (source_url, target_url) pair (see app/engines/monitoring/recheck.py).
+# No new crawl mechanism, matching the precedent set by Phase 5's
+# competitor engine and Phase 10's guest-post detection reusing the same
+# crawler rather than inventing a second one.
+#
+# "new" isn't a monitoring event here: a backlink becomes NEW the moment
+# Phase 3 first verifies it, which that phase already models fully (a
+# fresh `Backlink` row). Re-detecting "newness" on a recheck would be
+# redundant, not a real signal this phase adds.
+# ---------------------------------------------------------------------------
+
+
+class BacklinkChangeType(str, enum.Enum):
+    LOST = "lost"
+    ATTRIBUTE_CHANGED = "attribute_changed"  # follow<->nofollow, sponsored/ugc toggled
+    ANCHOR_CHANGED = "anchor_changed"
+    SOURCE_STATUS_CHANGED = "source_status_changed"  # e.g. 200 -> 404/301
+    CANONICAL_CHANGED = "canonical_changed"
+
+
+class BacklinkMonitoringEvent(TimestampMixin, Base):
+    """One row per detected change on a recheck -- append-only history,
+    never overwritten, same pattern as BacklinkObservation/
+    EmailVerification/CampaignEvent.
+    """
+
+    __tablename__ = "backlink_monitoring_events"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    backlink_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("backlinks.id"), index=True)
+    change_type: Mapped[BacklinkChangeType] = mapped_column(
+        Enum(BacklinkChangeType, name="backlink_change_type")
+    )
+    # Explicit before/after values for the specific field(s) that
+    # changed -- never just a boolean "something changed" flag. None for
+    # LOST (there's no "after" state for a link that's gone).
+    before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    detail: Mapped[str] = mapped_column(Text)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

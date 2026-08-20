@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.errors import NotFoundError
-from app.api.schemas import BacklinkDetailOut, BacklinkOut
-from app.db.models import Backlink, BacklinkObservation
+from app.api.schemas import BacklinkDetailOut, BacklinkMonitoringEventOut, BacklinkOut
+from app.db.models import Backlink, BacklinkMonitoringEvent, BacklinkObservation
+from app.engines.monitoring.recheck import recheck_backlink
 
 router = APIRouter(prefix="/backlinks", tags=["backlinks"])
 
@@ -50,4 +51,39 @@ def get_backlink(backlink_id: uuid.UUID, db: Session = Depends(get_db)):
         first_seen_at=backlink.first_seen_at,
         last_seen_at=backlink.last_seen_at,
         observations=observations,
+    )
+
+
+@router.post("/{backlink_id}/recheck", response_model=list[BacklinkMonitoringEventOut])
+async def recheck_backlink_endpoint(backlink_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Re-crawls the backlink's source page for real (Phase 3's
+    pipeline, reused) and diffs the result against its last known state
+    -- see app/engines/monitoring/recheck.py for exactly what's
+    detected and why "target changed" isn't. Returns whatever changed
+    (empty list if nothing did); never fabricates an alert.
+    """
+    try:
+        await recheck_backlink(backlink_id)
+    except ValueError as exc:
+        raise NotFoundError(str(exc)) from exc
+
+    return list(
+        db.scalars(
+            select(BacklinkMonitoringEvent)
+            .where(BacklinkMonitoringEvent.backlink_id == backlink_id)
+            .order_by(BacklinkMonitoringEvent.detected_at.desc())
+        )
+    )
+
+
+@router.get("/{backlink_id}/monitoring-events", response_model=list[BacklinkMonitoringEventOut])
+def list_monitoring_events(backlink_id: uuid.UUID, db: Session = Depends(get_db)):
+    if db.get(Backlink, backlink_id) is None:
+        raise NotFoundError(f"no such backlink: {backlink_id}")
+    return list(
+        db.scalars(
+            select(BacklinkMonitoringEvent)
+            .where(BacklinkMonitoringEvent.backlink_id == backlink_id)
+            .order_by(BacklinkMonitoringEvent.detected_at.desc())
+        )
     )
