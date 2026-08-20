@@ -121,6 +121,7 @@ async def test_competitors_and_link_gaps_endpoints_end_to_end():
     assert rows[0]["competitor_overlap_count"] == 1
     assert rows[0]["confidence"] == "low"
     assert "competitor-a.example" in rows[0]["competitor_hosts"]
+    assert any("competitor-a.example" in e for e in rows[0]["evidence"])
 
 
 @pytest.mark.asyncio

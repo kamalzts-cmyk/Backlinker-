@@ -450,6 +450,13 @@ class LinkGapOpportunity(TimestampMixin, Base):
     confidence: Mapped[LinkGapConfidence] = mapped_column(
         Enum(LinkGapConfidence, name="link_gap_confidence")
     )
+    # Phase 12 (see PRODUCT_SPEC.md §3.2): human-readable evidence, same
+    # field shape as GuestPostOpportunity.evidence and
+    # OpportunityScore.evidence -- every opportunity-shaped row in this
+    # project carries its own "why," not a separate polymorphic table
+    # joined in after the fact (see docs/ARCHITECTURE.md's Phase 12 note
+    # on why evidence is colocated with what it explains).
+    evidence: Mapped[list] = mapped_column(JSON)
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

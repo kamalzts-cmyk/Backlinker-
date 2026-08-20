@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Backlink, LinkGapConfidence, LinkGapOpportunity
+from app.db.models import Backlink, Domain, LinkGapConfidence, LinkGapOpportunity
 from app.engines.competitor.repository import list_competitor_domain_ids
 
 
@@ -81,6 +81,17 @@ def _upsert_gap_opportunity(
     domain_id_strings = sorted(str(d) for d in competitor_domain_ids)
     now = datetime.now(UTC)
 
+    competitor_hosts = sorted(
+        d.normalized_host
+        for d in session.scalars(select(Domain).where(Domain.id.in_(competitor_domain_ids)))
+    )
+    candidate_host = session.get(Domain, candidate_domain_id)
+    evidence = [f"Links to tracked competitor: {host}" for host in competitor_hosts]
+    evidence.append(
+        f"{candidate_host.normalized_host if candidate_host else candidate_domain_id} "
+        f"does not currently link to the primary domain"
+    )
+
     existing = session.scalar(
         select(LinkGapOpportunity).where(
             LinkGapOpportunity.primary_domain_id == primary_domain_id,
@@ -91,6 +102,7 @@ def _upsert_gap_opportunity(
         existing.competitor_overlap_count = overlap_count
         existing.competitor_domain_ids = domain_id_strings
         existing.confidence = confidence
+        existing.evidence = evidence
         existing.computed_at = now
         return existing
 
@@ -100,6 +112,7 @@ def _upsert_gap_opportunity(
         competitor_overlap_count=overlap_count,
         competitor_domain_ids=domain_id_strings,
         confidence=confidence,
+        evidence=evidence,
         computed_at=now,
     )
     session.add(opportunity)

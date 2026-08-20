@@ -148,4 +148,5 @@ class LinkGapOpportunityOut(BaseModel):
     competitor_overlap_count: int
     competitor_hosts: list[str]
     confidence: str
+    evidence: list[str]
     computed_at: datetime

@@ -88,6 +88,7 @@ def get_link_gaps(
                 if uuid.UUID(d) in domains
             ),
             confidence=o.confidence,
+            evidence=o.evidence,
             computed_at=o.computed_at,
         )
         for o in opportunities

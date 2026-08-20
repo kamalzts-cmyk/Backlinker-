@@ -1,10 +1,10 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-11 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-12 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
 competitor/link-gap engine, a real API layer, contact intelligence,
-email verification, guest-post intelligence, and opportunity scoring)
-are implemented and tested** — see `app/crawler/`,
+email verification, guest-post intelligence, opportunity scoring, and
+evidence-on-every-opportunity) are implemented and tested** — see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
 `app/engines/contact/`, `app/engines/guest_post/`,
 `app/engines/scoring/`, and `app/api/`. Run it with `uvicorn

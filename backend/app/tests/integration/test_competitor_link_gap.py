@@ -96,10 +96,16 @@ async def test_link_gap_excludes_domains_already_linking_to_primary_and_tiers_by
             assert both_domain.id in by_candidate
             assert by_candidate[both_domain.id].competitor_overlap_count == 2
             assert by_candidate[both_domain.id].confidence == LinkGapConfidence.MEDIUM
+            both_evidence = by_candidate[both_domain.id].evidence
+            assert any("competitor-a.example" in e for e in both_evidence)
+            assert any("competitor-b.example" in e for e in both_evidence)
 
             assert a_only_domain.id in by_candidate
             assert by_candidate[a_only_domain.id].competitor_overlap_count == 1
             assert by_candidate[a_only_domain.id].confidence == LinkGapConfidence.LOW
+            assert any(
+                "competitor-a.example" in e for e in by_candidate[a_only_domain.id].evidence
+            )
 
             # already links to primary -- must NOT appear as a gap
             assert a_and_primary_domain.id not in by_candidate
