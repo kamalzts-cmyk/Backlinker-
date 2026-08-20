@@ -295,3 +295,37 @@ def test_backlink_recheck_404_for_unknown_backlink():
     response = client.post("/backlinks/00000000-0000-0000-0000-000000000000/recheck")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_reports_endpoint_exports_a_real_backlinks_csv():
+    from app.crawler.repository import get_or_create_domain
+
+    with FixtureServer() as base_url:
+        with session_scope() as session:
+            target_domain = get_or_create_domain(session, raw_host="example.com")
+            candidate = create_candidate(
+                session,
+                source_url=f"{base_url}/index.html",
+                target_url="https://example.com/follow-target",
+                target_domain_id=target_domain.id,
+                source_type=BacklinkSourceType.USER_PROVIDED,
+            )
+            candidate_id, target_domain_id = candidate.id, target_domain.id
+
+        observation = await verify_candidate(candidate_id)
+        assert observation is not None
+
+    response = client.get(
+        "/reports/backlinks",
+        params={"format": "csv", "target_domain_id": str(target_domain_id)},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv; charset=utf-8"
+    assert "example.com/follow-target" in response.text
+
+
+def test_reports_endpoint_404_for_unknown_report_type():
+    response = client.get("/reports/not_a_real_report")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"

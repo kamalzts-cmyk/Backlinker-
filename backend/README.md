@@ -1,16 +1,17 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-16 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-17 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
 competitor/link-gap engine, a real API layer, contact intelligence,
 email verification, guest-post intelligence, opportunity scoring,
 evidence-on-every-opportunity, an AI provider layer, outreach strategy
-generation, campaign funnel tracking, and backlink monitoring) are
+generation, campaign funnel tracking, backlink monitoring, and
+reports/exports) are
 implemented and tested** — see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
 `app/engines/contact/`, `app/engines/guest_post/`,
 `app/engines/scoring/`, `app/engines/ai/`, `app/engines/outreach/`,
-`app/engines/campaigns/`, `app/engines/monitoring/`, and
+`app/engines/campaigns/`, `app/engines/monitoring/`, `app/reports/`, and
 `app/api/`. Run it with `uvicorn
 app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
 now — it needs a search-backend decision (paid API vs. self-hosted vs.
@@ -136,10 +137,16 @@ before depending on it in production.
   on-demand primitive (`POST /backlinks/{id}/recheck`) a future
   cron/worker would call; there's no task-queue infrastructure in this
   project yet to build one around.
+- `app/reports/` — reports/exports (Phase 17): `rows.py` builds row data
+  for five report types (backlinks, link_gaps, contacts, guest_posts,
+  opportunity_scores) purely by reading tables earlier phases already
+  populated — no new computation. `export.py` writes CSV/JSON (stdlib),
+  XLSX (`openpyxl`), and PDF (`reportlab`) — real files each format's
+  own library can read back. `GET /reports/{report_type}?format=...`.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`,
   `/contacts`, `/guest-posts`, `/opportunities`, `/outreach`,
-  `/campaigns`) since
+  `/campaigns`, `/reports`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
   `app/api/deps.py` (FastAPI runs sync route functions in a threadpool).
   Errors follow `../docs/API.md`'s `{"error": {"code","message","detail"}}`
@@ -155,16 +162,18 @@ before depending on it in production.
   `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 131 tests, all real except the Common Crawl and Ollama
+- `app/tests/` — 143 tests, all real except the Common Crawl and Ollama
   HTTP layers (see the Phase 4 and Phase 13 caveats above): unit tests
   for normalization/fingerprinting/JS-detection/extraction/
   classification/CDX-parsing against local HTML fixtures
   (`app/tests/fixtures/html/`), unit tests for `OllamaProvider`'s request/
-  response handling against `respx`-mocked HTTP, and integration tests
+  response handling against `respx`-mocked HTTP, unit tests for the
+  report writers (each format round-tripped through its own real
+  parser/reader), and integration tests
   that run the actual crawler, backlink verification, competitor/
   link-gap, contact/guest-post/opportunity, outreach-strategy,
-  campaign-funnel, and backlink-monitoring pipelines against a local
-  fixture HTTP server
+  campaign-funnel, backlink-monitoring, and report-generation pipelines
+  against a local fixture HTTP server
   (`app/tests/fixtures/server.py`, which can bind multiple loopback
   addresses to simulate genuinely distinct source domains) and a real
   Postgres test database — no mocked HTTP, no mocked DB, anywhere except

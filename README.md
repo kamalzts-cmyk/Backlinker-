@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and 8-16 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6 and 8-17 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -92,8 +92,14 @@ infrastructure:
   before/after alerts for exactly what changed (link attributes, anchor
   text, source status, canonical URL) — never a bare "something
   changed." A link that's gone is marked lost rather than silently kept.
+- Reports/exports: CSV, JSON, XLSX, and PDF exports for backlinks,
+  link-gap opportunities, contacts, guest-post opportunities, and
+  opportunity scores — every value traces back to a row an earlier
+  engine already collected and verified; the export layer adds no new
+  computation, and each file format is a real one its own
+  library/reader can open, not a stub with the right extension.
 
-131 tests pass, almost all against real infrastructure (a real fixture
+143 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
 against real public sites/domains). Three honest caveats, not glossed
@@ -111,10 +117,9 @@ between separate crawl jobs in the same process — see
 
 See [`backend/README.md`](./backend/README.md) for exactly what's
 implemented, how to run it, and the full list of known follow-ups.
-Everything past this (reports/exports, GEO intelligence, frontend) is
-still empty pending its own phase, per the build order in
-`PRODUCT_SPEC.md` §9 — no premature scaffolding ahead of working code
-underneath it.
+Everything past this (AI-search/GEO intelligence, frontend) is still
+empty pending its own phase, per the build order in `PRODUCT_SPEC.md` §9
+— no premature scaffolding ahead of working code underneath it.
 
 ```
 docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama

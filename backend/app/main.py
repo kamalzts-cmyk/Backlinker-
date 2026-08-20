@@ -18,6 +18,7 @@ from app.api import (
     guest_posts,
     opportunities,
     outreach,
+    reports,
 )
 from app.api.errors import register_error_handlers
 
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(opportunities.router)
     app.include_router(outreach.router)
     app.include_router(campaigns.router)
+    app.include_router(reports.router)
     return app
 
 
