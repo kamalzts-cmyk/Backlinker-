@@ -37,6 +37,20 @@ def test_get_domain_404_for_unknown_id():
     assert response.json()["error"]["code"] == "not_found"
 
 
+def test_list_domains_reflects_real_registered_domains_and_supports_search():
+    client.post("/domains", json={"host": "list-domains-alpha.example"})
+    client.post("/domains", json={"host": "list-domains-beta.example"})
+
+    all_response = client.get("/domains")
+    assert all_response.status_code == 200
+    hosts = {d["normalized_host"] for d in all_response.json()}
+    assert {"list-domains-alpha.example", "list-domains-beta.example"} <= hosts
+
+    filtered_response = client.get("/domains", params={"q": "alpha"})
+    filtered_hosts = {d["normalized_host"] for d in filtered_response.json()}
+    assert filtered_hosts == {"list-domains-alpha.example"}
+
+
 def test_crawl_endpoint_runs_a_real_crawl_and_reports_page_count():
     with FixtureServer() as base_url:
         response = client.post("/crawl", json={"url": f"{base_url}/index.html", "max_pages": 5})
