@@ -1,14 +1,15 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-13 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-14 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
 competitor/link-gap engine, a real API layer, contact intelligence,
 email verification, guest-post intelligence, opportunity scoring,
-evidence-on-every-opportunity, and an AI provider layer) are implemented
-and tested** — see `app/crawler/`,
+evidence-on-every-opportunity, an AI provider layer, and outreach
+strategy generation) are implemented and tested** — see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
 `app/engines/contact/`, `app/engines/guest_post/`,
-`app/engines/scoring/`, `app/engines/ai/`, and `app/api/`. Run it with `uvicorn
+`app/engines/scoring/`, `app/engines/ai/`, `app/engines/outreach/`, and
+`app/api/`. Run it with `uvicorn
 app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
 now — it needs a search-backend decision (paid API vs. self-hosted vs.
 scraping) that hasn't been made; see the note in `../docs/ARCHITECTURE.md`
@@ -93,11 +94,25 @@ before depending on it in production.
   interface (`generate_structured(prompt, response_model, system=None) ->
   response_model`, schema-validated, never a fabricated/partial result)
   and `OllamaProvider`, built against Ollama's real documented
-  `/api/generate` structured-output API. Not wired into any business use
-  case yet — that starts in Phase 14. See the Phase 13 caveat above and
+  `/api/generate` structured-output API. First consumer is Phase 14's
+  outreach-angle synthesis below. See the Phase 13 caveat above and
   the module docstring in `ollama_provider.py`.
+- `app/engines/outreach/strategy.py` — outreach strategy generation
+  (Phase 14, `PRODUCT_SPEC.md` §4.7): picks an opportunity type
+  (guest-post opportunity > link-gap opportunity > generic direct
+  outreach, in that priority) and computes `reason`/`evidence`/
+  `expected_link_probability`/`difficulty` deterministically from
+  Phase 5/10 data this project already verified. The AI does exactly one
+  thing — synthesizes `angle` from that evidence, instructed to never
+  invent facts — and `angle` stays `None` rather than a fabricated
+  fallback if no `AIProvider` is configured or generation fails. No copy
+  drafting or sending is built (`PRODUCT_SPEC.md` §4.7/§26 explicitly
+  excludes automated sending from v1); `recommended_content_asset` is
+  always `None` (needs a user-content-asset table that doesn't exist —
+  Phase 4.8, not built).
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
-  (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) since
+  (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`,
+  `/contacts`, `/guest-posts`, `/opportunities`, `/outreach`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
   `app/api/deps.py` (FastAPI runs sync route functions in a threadpool).
   Errors follow `../docs/API.md`'s `{"error": {"code","message","detail"}}`
@@ -106,18 +121,20 @@ before depending on it in production.
   crawl_requests, crawl_errors, pages, page_links), the backlink engine
   schema (backlink_candidates, backlink_observations, backlinks), the
   competitor/link-gap schema (competitor_relationships,
-  link_gap_opportunities), and the contact schema (contacts,
-  contact_sources). See `../docs/DATABASE.md`.
+  link_gap_opportunities), the contact schema (contacts,
+  contact_sources), and the outreach schema (outreach_strategies). See
+  `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 113 tests, all real except the Common Crawl and Ollama
+- `app/tests/` — 121 tests, all real except the Common Crawl and Ollama
   HTTP layers (see the Phase 4 and Phase 13 caveats above): unit tests
   for normalization/fingerprinting/JS-detection/extraction/
   classification/CDX-parsing against local HTML fixtures
   (`app/tests/fixtures/html/`), unit tests for `OllamaProvider`'s request/
   response handling against `respx`-mocked HTTP, and integration tests
   that run the actual crawler, backlink verification, competitor/
-  link-gap, and API pipelines against a local fixture HTTP server
+  link-gap, contact/guest-post/opportunity, and outreach-strategy
+  pipelines against a local fixture HTTP server
   (`app/tests/fixtures/server.py`, which can bind multiple loopback
   addresses to simulate genuinely distinct source domains) and a real
   Postgres test database — no mocked HTTP, no mocked DB, anywhere except

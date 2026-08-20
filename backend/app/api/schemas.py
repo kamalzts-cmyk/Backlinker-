@@ -150,3 +150,22 @@ class LinkGapOpportunityOut(BaseModel):
     confidence: str
     evidence: list[str]
     computed_at: datetime
+
+
+class OutreachStrategyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    domain_id: uuid.UUID
+    contact_id: uuid.UUID
+    opportunity_type: str
+    guest_post_opportunity_id: uuid.UUID | None
+    link_gap_opportunity_id: uuid.UUID | None
+    reason: str
+    evidence: list[str]
+    angle: str | None
+    ai_generated: bool
+    recommended_content_asset: str | None
+    expected_link_probability: int | None
+    difficulty: str
+    computed_at: datetime

@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and 8-13 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6 and 8-14 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -69,9 +69,18 @@ infrastructure:
 - An AI provider layer (`AIProvider` interface + `OllamaProvider`), built
   against Ollama's real documented structured-output API — schema
   validated, raises rather than returns a fabricated/partial result on
-  any failure. Not wired into a business use case yet; that's Phase 14.
+  any failure.
+- Outreach strategy generation: for a given contact, deterministically
+  picks an opportunity type (guest-post opportunity, link-gap
+  opportunity, or generic direct outreach) and computes its reason,
+  evidence, expected link probability, and difficulty from data this
+  project already verified — the AI only synthesizes a short "angle"
+  from that evidence, explicitly barred from inventing facts, and is
+  left blank rather than fabricated when unavailable. No copy drafting
+  or automated sending is built — the product spec is explicit that v1
+  stops at a human-reviewed strategy.
 
-113 tests pass, almost all against real infrastructure (a real fixture
+121 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
 against real public sites/domains). Three honest caveats, not glossed
@@ -89,10 +98,10 @@ between separate crawl jobs in the same process — see
 
 See [`backend/README.md`](./backend/README.md) for exactly what's
 implemented, how to run it, and the full list of known follow-ups.
-Everything past this (outreach intelligence, campaigns, monitoring,
-reports, GEO intelligence, frontend) is still empty pending its own
-phase, per the build order in `PRODUCT_SPEC.md` §9 — no premature
-scaffolding ahead of working code underneath it.
+Everything past this (campaigns, monitoring, reports, GEO intelligence,
+frontend) is still empty pending its own phase, per the build order in
+`PRODUCT_SPEC.md` §9 — no premature scaffolding ahead of working code
+underneath it.
 
 ```
 docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama

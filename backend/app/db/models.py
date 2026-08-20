@@ -677,3 +677,72 @@ class OpportunityScore(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("domain_id", "reference_domain_id", name="uq_opportunity_score_pair"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 14: outreach intelligence (see PRODUCT_SPEC.md §4.7).
+#
+# "AI does not write a pitch cold. It first produces an outreach
+# strategy ... and only then drafts personalized copy from that
+# strategy." This project builds the strategy step only -- no copy
+# drafting and no sending exist here (v1 explicitly excludes automated
+# sending, PRODUCT_SPEC.md §4.7/§26, and content-asset matching needs a
+# table of the user's own assets that doesn't exist yet, so
+# recommended_content_asset is always None).
+#
+# opportunity_type/reason/evidence/expected_link_probability/difficulty
+# are all computed deterministically from rows this project already
+# verified (GuestPostOpportunity, LinkGapOpportunity, Contact) -- never
+# from the AI. The AI (via AIProvider, Phase 13) is used for exactly one
+# thing: synthesizing the `angle` text, explicitly instructed to use only
+# the evidence it's given and never invent facts. If no AIProvider is
+# configured or it fails, `angle` stays None -- see
+# app/engines/outreach/strategy.py.
+# ---------------------------------------------------------------------------
+
+
+class OutreachOpportunityType(str, enum.Enum):
+    GUEST_POST = "guest_post"
+    LINK_GAP = "link_gap"
+    GENERIC = "generic"
+
+
+class OutreachDifficulty(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class OutreachStrategy(TimestampMixin, Base):
+    __tablename__ = "outreach_strategies"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    contact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contacts.id"), unique=True, index=True
+    )
+    opportunity_type: Mapped[OutreachOpportunityType] = mapped_column(
+        Enum(OutreachOpportunityType, name="outreach_opportunity_type")
+    )
+    guest_post_opportunity_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("guest_post_opportunities.id"), nullable=True
+    )
+    link_gap_opportunity_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("link_gap_opportunities.id"), nullable=True
+    )
+    reason: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[list] = mapped_column(JSON)  # list[str]
+    # AI-synthesized suggested framing, evidence-constrained -- None if no
+    # AIProvider was configured or generation failed. Never a fallback
+    # canned string standing in for a real one.
+    angle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Always None here -- see the module comment above.
+    recommended_content_asset: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 0-100, None ("unavailable") when there's no guest-post or link-gap
+    # signal to derive it from -- never a fabricated flat default.
+    expected_link_probability: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    difficulty: Mapped[OutreachDifficulty] = mapped_column(
+        Enum(OutreachDifficulty, name="outreach_difficulty")
+    )
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

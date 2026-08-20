@@ -179,3 +179,32 @@ async def test_opportunity_score_endpoint():
     assert by_name["organic_traffic"]["value"] is None
     assert by_name["organic_traffic"]["confidence"] == "unavailable"
     assert by_name["contactability"]["confidence"] == "measured"
+
+
+@pytest.mark.asyncio
+async def test_outreach_strategy_endpoints_reflect_a_real_generic_strategy():
+    with FixtureServer() as base_url:
+        contacts = await discover_contacts_for_domain(f"{base_url}/contact.html", max_pages=1)
+    contact_id = str(contacts[0].id)
+
+    # use_ai=false -- no live Ollama in this sandbox (Phase 13 caveat);
+    # this exercises the deterministic fields only.
+    response = client.post(
+        "/outreach/strategy", params={"contact_id": contact_id, "use_ai": "false"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["opportunity_type"] == "generic"
+    assert body["angle"] is None
+    assert body["ai_generated"] is False
+    assert body["recommended_content_asset"] is None
+
+    fetched = client.get(f"/outreach/strategy/{contact_id}")
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == body["id"]
+
+
+def test_outreach_strategy_404_for_unknown_contact():
+    response = client.get("/outreach/strategy/00000000-0000-0000-0000-000000000000")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
