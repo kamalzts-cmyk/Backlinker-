@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6, 8, and 9 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6 and 8-10 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -46,16 +46,22 @@ infrastructure:
   uncapped contact records with provenance — never guessing a name/email
   pairing beyond schema.org markup or an unambiguous single-person page.
 - A domain-centric FastAPI layer (`/domains`, `/crawl`, `/backlinks`,
-  `/competitors`, `/link-gaps`, `/contacts`) — no `projects`/auth layer
-  exists yet.
+  `/competitors`, `/link-gaps`, `/contacts`, `/guest-posts`) — no
+  `projects`/auth layer exists yet.
 - Email verification: syntax, DNS/MX, and disposable-domain checks,
   genuinely proven against live DNS (no mocking needed — unlike HTTPS,
   DNS resolution isn't restricted here). SMTP-level mailbox/catch-all
   probing is explicitly out of scope: outbound port 25 is blocked in
   this sandbox, and the product spec is independently skeptical of it —
   we never send a verification email.
+- Guest-post intelligence: finds and analyzes a domain's guideline page
+  (word-count range, dofollow/nofollow/sponsored/author-bio mentions,
+  editor contact, closed-submissions detection) and produces a
+  transparent probability score that factors in how many distinct
+  authors have already been observed on the domain — labeled a proxy
+  signal, not confirmed guest authorship.
 
-92 tests pass, almost all against real infrastructure (a real fixture
+100 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
 against real public sites/domains). Two honest caveats, not glossed

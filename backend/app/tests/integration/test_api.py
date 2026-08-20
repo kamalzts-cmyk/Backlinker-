@@ -12,6 +12,7 @@ from app.db.models import BacklinkSourceType
 from app.engines.backlink.repository import create_candidate
 from app.engines.backlink.verify import verify_candidate
 from app.engines.contact.discover import discover_contacts_for_domain
+from app.engines.guest_post.detect import discover_guest_post_opportunity
 from app.main import app
 from app.tests.fixtures.server import FixtureServer
 
@@ -141,3 +142,23 @@ async def test_contacts_endpoints_list_and_verify_a_real_contact():
     verify_response = client.post(f"/contacts/{contact_id}/verify-email")
     assert verify_response.status_code == 200
     assert verify_response.json()["confidence_score"] > 0
+
+
+@pytest.mark.asyncio
+async def test_guest_posts_endpoints_reflect_a_real_opportunity():
+    with FixtureServer() as base_url:
+        opportunity = await discover_guest_post_opportunity(
+            f"{base_url}/write-for-us-detailed.html", max_pages=1
+        )
+    assert opportunity is not None
+
+    response = client.get("/guest-posts", params={"domain_id": str(opportunity.domain_id)})
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["word_count_min"] == 1200
+    assert rows[0]["editor_email"] == "editor@example.com"
+
+    detail = client.get(f"/guest-posts/{rows[0]['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["guest_post_probability"] == rows[0]["guest_post_probability"]

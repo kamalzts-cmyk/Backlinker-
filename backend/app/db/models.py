@@ -184,6 +184,10 @@ class Page(TimestampMixin, Base):
     h1: Mapped[list | None] = mapped_column(JSON, nullable=True)
     headings: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [{tag: "h2", text: "..."}]
     word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Normalized, capped visible text (see app/crawler/extractors/page.py)
+    # -- for full-text search (docs/DATABASE.md indexing strategy) and
+    # downstream text analysis (e.g. app/engines/guest_post/detect.py).
+    body_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     robots_meta_noindex: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -591,3 +595,39 @@ class EmailVerification(TimestampMixin, Base):
         _CONTACT_VERIFICATION_STATUS_TYPE
     )
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Phase 10: guest-post intelligence (see PRODUCT_SPEC.md §16/§24).
+#
+# Reuses Phase 8's page-type classification (a page classified
+# ContactPageType.GUEST_POST) and, per PRODUCT_SPEC.md's own caution
+# ("don't trust only a 'Write for us' page -- look at actual published
+# evidence"), factors in how many *distinct* authors have already been
+# observed on the domain's AUTHOR-classified pages (via existing Contact
+# rows) as a proxy for "does this site actually publish more than one
+# person." It is a proxy, not confirmed third-party authorship -- we
+# can't yet tell staff writers from guest contributors without more
+# signal (byline/employment data), and the probability score and its
+# evidence list say so explicitly rather than overclaiming certainty.
+# ---------------------------------------------------------------------------
+
+
+class GuestPostOpportunity(TimestampMixin, Base):
+    __tablename__ = "guest_post_opportunities"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), unique=True, index=True)
+    guideline_page_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    editor_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    word_count_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    word_count_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mentions_dofollow: Mapped[bool] = mapped_column(Boolean, default=False)
+    mentions_nofollow: Mapped[bool] = mapped_column(Boolean, default=False)
+    mentions_sponsored: Mapped[bool] = mapped_column(Boolean, default=False)
+    mentions_author_bio: Mapped[bool] = mapped_column(Boolean, default=False)
+    appears_closed: Mapped[bool] = mapped_column(Boolean, default=False)
+    distinct_authors_observed: Mapped[int] = mapped_column(Integer, default=0)
+    guest_post_probability: Mapped[int] = mapped_column(Integer)
+    evidence: Mapped[list] = mapped_column(JSON)  # list[str] -- see docstring above
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -106,6 +106,7 @@ def record_page(
         h1=page_data.h1,
         headings=page_data.headings,
         word_count=page_data.word_count,
+        body_text=page_data.body_text,
         language=page_data.language,
         robots_meta_noindex=page_data.robots_meta_noindex,
         robots_meta_nofollow=page_data.robots_meta_nofollow,

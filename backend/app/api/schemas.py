@@ -99,6 +99,26 @@ class ContactOut(BaseModel):
     confidence_score: int
 
 
+class GuestPostOpportunityOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    domain_id: uuid.UUID
+    guideline_page_url: str | None
+    editor_email: str | None
+    word_count_min: int | None
+    word_count_max: int | None
+    mentions_dofollow: bool
+    mentions_nofollow: bool
+    mentions_sponsored: bool
+    mentions_author_bio: bool
+    appears_closed: bool
+    distinct_authors_observed: int
+    guest_post_probability: int
+    evidence: list[str]
+    computed_at: datetime
+
+
 class LinkGapOpportunityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

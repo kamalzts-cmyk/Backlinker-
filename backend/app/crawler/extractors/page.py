@@ -5,10 +5,16 @@ headings, word count, language, canonical, robots, indexability).
 schema.org/OpenGraph/Twitter-card/entity extraction lands in Phase 2.
 """
 
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+
+# Stored for full-text search and downstream text analysis (see
+# docs/DATABASE.md's indexing strategy and app/engines/guest_post/detect.py)
+# -- capped so a single pathological page can't blow out row size.
+_BODY_TEXT_MAX_CHARS = 20_000
 
 
 @dataclass
@@ -22,6 +28,7 @@ class PageData:
     language: str | None = None
     robots_meta_noindex: bool = False
     robots_meta_nofollow: bool = False
+    body_text: str | None = None
 
 
 def extract_page_data(soup: BeautifulSoup, page_url: str) -> PageData:
@@ -40,8 +47,9 @@ def extract_page_data(soup: BeautifulSoup, page_url: str) -> PageData:
         for tag in soup.find_all(["h2", "h3", "h4", "h5", "h6"])
     ]
 
-    body_text = soup.get_text(separator=" ")
-    word_count = len(body_text.split())
+    raw_body_text = soup.get_text(separator=" ")
+    word_count = len(raw_body_text.split())
+    body_text = re.sub(r"\s+", " ", raw_body_text).strip()[:_BODY_TEXT_MAX_CHARS]
 
     html_tag = soup.find("html")
     language = html_tag.get("lang") if html_tag and html_tag.get("lang") else None
@@ -61,4 +69,5 @@ def extract_page_data(soup: BeautifulSoup, page_url: str) -> PageData:
         language=language,
         robots_meta_noindex=robots_meta_noindex,
         robots_meta_nofollow=robots_meta_nofollow,
+        body_text=body_text,
     )

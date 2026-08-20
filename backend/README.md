@@ -1,12 +1,13 @@
 # backend
 
-FastAPI project. **Phases 1-6, 8, and 9 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-10 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
-competitor/link-gap engine, a real API layer, contact intelligence, and
-email verification) are implemented and tested** — see `app/crawler/`,
-`app/engines/backlink/`, `app/engines/competitor/`,
-`app/engines/contact/`, and `app/api/`. Run it with `uvicorn app.main:app
---reload`. Phase 7 (search-pattern prospect discovery) is skipped for
+competitor/link-gap engine, a real API layer, contact intelligence,
+email verification, and guest-post intelligence) are implemented and
+tested** — see `app/crawler/`, `app/engines/backlink/`,
+`app/engines/competitor/`, `app/engines/contact/`,
+`app/engines/guest_post/`, and `app/api/`. Run it with `uvicorn
+app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
 now — it needs a search-backend decision (paid API vs. self-hosted vs.
 scraping) that hasn't been made; see the note in `../docs/ARCHITECTURE.md`
 risk #3. The rest of the intelligence engines and the frontend are still
@@ -65,6 +66,15 @@ test before depending on it in production.
   probing (would need outbound port 25, blocked here) or send any
   verification email, per `PRODUCT_SPEC.md` §13. Ceiling is `LIKELY`,
   never `VERIFIED`/`CATCH_ALL` — see the module docstring.
+- `app/engines/guest_post/detect.py` — guest-post guideline analysis
+  (word-count range, dofollow/nofollow/sponsored/author-bio mentions,
+  editor email, closed-submissions detection) plus a transparent
+  probability score that factors in distinct authors already observed on
+  the domain (a proxy signal, explicitly labeled as such — see the
+  module docstring). Also where `pages.body_text` earns its keep: full
+  visible page text, added in this phase after noticing `../docs/DATABASE.md`
+  had documented it for full-text search but Phase 2 never actually added
+  the column.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
@@ -79,7 +89,7 @@ test before depending on it in production.
   contact_sources). See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 92 tests, all real except the Common Crawl HTTP layer
+- `app/tests/` — 100 tests, all real except the Common Crawl HTTP layer
   (see the Phase 4 caveat above): unit tests for normalization/
   fingerprinting/JS-detection/extraction/classification/CDX-parsing
   against local HTML fixtures (`app/tests/fixtures/html/`), and
