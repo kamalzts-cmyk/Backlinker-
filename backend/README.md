@@ -1,13 +1,14 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-12 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-13 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
 competitor/link-gap engine, a real API layer, contact intelligence,
-email verification, guest-post intelligence, opportunity scoring, and
-evidence-on-every-opportunity) are implemented and tested** — see `app/crawler/`,
+email verification, guest-post intelligence, opportunity scoring,
+evidence-on-every-opportunity, and an AI provider layer) are implemented
+and tested** — see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
 `app/engines/contact/`, `app/engines/guest_post/`,
-`app/engines/scoring/`, and `app/api/`. Run it with `uvicorn
+`app/engines/scoring/`, `app/engines/ai/`, and `app/api/`. Run it with `uvicorn
 app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
 now — it needs a search-backend decision (paid API vs. self-hosted vs.
 scraping) that hasn't been made; see the note in `../docs/ARCHITECTURE.md`
@@ -21,6 +22,13 @@ build sandbox (policy-denied at the network layer, not a bug — see
 `../docs/ARCHITECTURE.md` risk #14) so that one connector is tested
 against realistic fixtures rather than the live service. Run a live smoke
 test before depending on it in production.
+
+**Phase 13 caveat:** same story, different service — Ollama itself
+cannot be installed or reached from this build sandbox (policy-denied,
+see `../docs/ARCHITECTURE.md` risk #17), so `app/engines/ai/ollama_provider.py`
+is tested against Ollama's real documented request/response shape with
+the HTTP transport mocked, not a live server. Run a live smoke test
+before depending on it in production.
 
 ## What's here
 
@@ -81,6 +89,13 @@ test before depending on it in production.
   (see `OpportunityScore`'s model docstring) — every component is either
   `measured` from real data or explicitly `unavailable`, never guessed.
   Organic traffic is *always* unavailable (no data source integrated).
+- `app/engines/ai/` — the AI provider layer: an abstract `AIProvider`
+  interface (`generate_structured(prompt, response_model, system=None) ->
+  response_model`, schema-validated, never a fabricated/partial result)
+  and `OllamaProvider`, built against Ollama's real documented
+  `/api/generate` structured-output API. Not wired into any business use
+  case yet — that starts in Phase 14. See the Phase 13 caveat above and
+  the module docstring in `ollama_provider.py`.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
@@ -95,16 +110,21 @@ test before depending on it in production.
   contact_sources). See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 105 tests, all real except the Common Crawl HTTP layer
-  (see the Phase 4 caveat above): unit tests for normalization/
-  fingerprinting/JS-detection/extraction/classification/CDX-parsing
-  against local HTML fixtures (`app/tests/fixtures/html/`), and
-  integration tests that run the actual crawler, backlink verification,
-  competitor/link-gap, and API pipelines against a local fixture HTTP
-  server (`app/tests/fixtures/server.py`, which can bind multiple
-  loopback addresses to simulate genuinely distinct source domains) and a
-  real Postgres test database — no mocked HTTP, no mocked DB, anywhere
-  except the Common Crawl connector's own external calls.
+- `app/tests/` — 113 tests, all real except the Common Crawl and Ollama
+  HTTP layers (see the Phase 4 and Phase 13 caveats above): unit tests
+  for normalization/fingerprinting/JS-detection/extraction/
+  classification/CDX-parsing against local HTML fixtures
+  (`app/tests/fixtures/html/`), unit tests for `OllamaProvider`'s request/
+  response handling against `respx`-mocked HTTP, and integration tests
+  that run the actual crawler, backlink verification, competitor/
+  link-gap, and API pipelines against a local fixture HTTP server
+  (`app/tests/fixtures/server.py`, which can bind multiple loopback
+  addresses to simulate genuinely distinct source domains) and a real
+  Postgres test database — no mocked HTTP, no mocked DB, anywhere except
+  the Common Crawl connector's and Ollama provider's own external calls.
+  `app/tests/fixtures/fake_ai_provider.py`'s `FakeAIProvider` is a
+  reusable in-memory `AIProvider` test double for later phases that
+  consume AI without depending on Ollama being reachable.
 
 ## Running it
 

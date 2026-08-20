@@ -214,7 +214,7 @@ phase. "Frontend renders" is never sufficient on its own.
 | 10 ✅ | Guest-post intelligence | **Done.** Reuses Phase 1/2 crawl + Phase 8 page classification to find and analyze the guideline page (word-count range, dofollow/nofollow/sponsored/author-bio mentions, editor email, closed-submissions detection — all via named, explicit regex patterns, not general NLP). The probability score factors in distinct authors already observed on the domain's author pages as a proxy for "does this site publish more than one person" — explicitly labeled a proxy, not confirmed third-party authorship, since we can't yet distinguish staff writers from guest contributors. Also retroactively completes a Phase 2 gap: added the `pages.body_text` column (already documented in `docs/DATABASE.md`'s indexing strategy but never actually added) plus the full-text GIN index it was meant to back. 7 new tests, all real. |
 | 11 ✅ | Opportunity scoring | **Done, with an intentionally smaller component set than PRODUCT_SPEC.md §8's named list** (see `OpportunityScore`'s model docstring) — every component is computed only from data this project actually collected (indexability, content depth, contactability, link probability from Phase 5/10, crude keyword-overlap topical relevance) or explicitly reported `unavailable` (organic traffic — no data source; topical relevance/link probability without a reference domain). Composite is a weighted average over only the *available* components, then spam risk (crawl-error-rate + thin-content-ratio) dampens it. `POST /opportunities/score`. 4 new tests confirming real signals feed real scores and unmeasurable ones never get a fabricated number. |
 | 12 ✅ | Evidence engine | **Done — as a design discipline applied from Phase 5 onward, not a separate module.** Per risk #9's original warning, every opportunity-shaped table (`LinkGapOpportunity`, `GuestPostOpportunity`, `OpportunityScore`) got an `evidence: list[str]` field the moment it was created, populated at write-time by the same function that computes the score — never backfilled later. `BacklinkObservation`/`Contact` carry their evidence structurally (anchor_text, surrounding_text, source_url, source_text) rather than as prose, which is more precise, not less. No separate polymorphic `evidence` table was built: colocating evidence with what it explains avoids a join and can't drift out of sync the way a backfilled side-table could. Closed the one gap found on audit (`LinkGapOpportunity` lacked the field the other two had) and added real assertions proving the evidence content, not just its presence. |
-| 13 | Ollama AI layer | Provider interface implemented; Ollama works with zero other API keys configured |
+| 13 ✅ | Ollama AI layer | **Done, with a caveat.** `AIProvider` abstract interface (`app/engines/ai/provider.py`) plus `OllamaProvider` (`app/engines/ai/ollama_provider.py`), built against Ollama's real, documented `/api/generate` structured-output API — requests a JSON Schema via `format`, validates the response against the caller's Pydantic `response_model`, raises `AIGenerationError` on any transport/parse/schema failure rather than returning a partial result. No business use case wired to it yet (deferred to Phase 14, so the interface isn't shaped around one assumed caller). Same caveat as Phase 4: Ollama itself is unreachable from this build sandbox (policy-denied, see risk #17), so `OllamaProvider` is tested with `respx`-mocked HTTP proving request/response correctness, not live connectivity — needs a live smoke test before production use. `FakeAIProvider` test double added for later phases to depend on the `AIProvider` contract without needing Ollama at all. 8 new tests. |
 | 14 | Outreach intelligence | Strategy object generated before any email draft; no fabricated claims in output |
 | 15 | Campaigns (human-approved send) | Full funnel tracked (sent→backlink); no automated bulk sending |
 | 16 | Backlink monitoring | Scheduled re-crawl detects a real attribute/status change with before/after evidence |
@@ -363,3 +363,20 @@ phase. "Frontend renders" is never sufficient on its own.
     the crawler's implicit default queue. Any future code that builds a
     Crawlee crawler directly (bypassing these two factories) needs the
     same treatment.
+17. **(Confirmed in Phase 13 build) Ollama itself cannot be installed or
+    reached from this build sandbox.** Both `ollama.com/install.sh` and
+    the GitHub releases used to install Ollama are policy-denied by the
+    outbound proxy here — same egress-allowlist pattern already
+    documented in risk #14 for Common Crawl, confirmed via the proxy's
+    diagnostic log (persistent denial, not a flake). This is despite the
+    sandbox otherwise having enough headroom to run a small local model
+    (15GB RAM, 30GB disk, 4 cores). Following the same precedent as
+    Common Crawl: `app/engines/ai/ollama_provider.py`'s `OllamaProvider`
+    is built against Ollama's real, documented `/api/generate`
+    structured-output API (JSON Schema in `format`, `stream: false`), and
+    its request construction/response parsing is proven correct with
+    `respx`-mocked HTTP — but live connectivity to a real `ollama serve`
+    has not been exercised here. Run a live smoke test before depending
+    on it in production. `app/tests/fixtures/fake_ai_provider.py`'s
+    `FakeAIProvider` lets later phases (14, 18) that consume `AIProvider`
+    be tested without depending on Ollama being reachable at all.

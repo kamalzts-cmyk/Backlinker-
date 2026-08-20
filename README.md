@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and 8-12 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6 and 8-13 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -66,25 +66,30 @@ infrastructure:
   contactability, link probability, crude keyword-overlap topical
   relevance), each one labeled `measured` or `unavailable` — organic
   traffic is always `unavailable` rather than a guessed number.
+- An AI provider layer (`AIProvider` interface + `OllamaProvider`), built
+  against Ollama's real documented structured-output API — schema
+  validated, raises rather than returns a fabricated/partial result on
+  any failure. Not wired into a business use case yet; that's Phase 14.
 
-105 tests pass, almost all against real infrastructure (a real fixture
+113 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
-against real public sites/domains). Two honest caveats, not glossed
-over: Common Crawl's own
-servers aren't reachable from this particular build sandbox, so that one
-connector is tested against realistic fixtures rather than the live
-service (needs a live smoke test before production use); and **Phase 7
-(search-pattern prospect discovery) is skipped** because it needs a
-search-backend decision — paid API, self-hosted SearX, or scraping —
-that hasn't been made. Building this also surfaced and fixed a genuine
-Crawlee bug (cross-run request-queue state leaking between separate
-crawl jobs in the same process — see `docs/ARCHITECTURE.md` risk #15).
+against real public sites/domains). Three honest caveats, not glossed
+over: Common Crawl's own servers, and Ollama itself, aren't reachable
+from this particular build sandbox, so those two integrations are tested
+against realistic fixtures / mocked HTTP shaped exactly like the real
+documented APIs rather than the live services (both need a live smoke
+test before production use — see `docs/ARCHITECTURE.md` risks #14 and
+#17); and **Phase 7 (search-pattern prospect discovery) is skipped**
+because it needs a search-backend decision — paid API, self-hosted
+SearX, or scraping — that hasn't been made. Building this also surfaced
+and fixed a genuine Crawlee bug (cross-run request-queue state leaking
+between separate crawl jobs in the same process — see
+`docs/ARCHITECTURE.md` risk #15).
 
 See [`backend/README.md`](./backend/README.md) for exactly what's
 implemented, how to run it, and the full list of known follow-ups.
-Everything past this (prospect discovery, email verification, guest-post
-intelligence, scoring, AI layer, outreach, campaigns, monitoring,
+Everything past this (outreach intelligence, campaigns, monitoring,
 reports, GEO intelligence, frontend) is still empty pending its own
 phase, per the build order in `PRODUCT_SPEC.md` §9 — no premature
 scaffolding ahead of working code underneath it.
