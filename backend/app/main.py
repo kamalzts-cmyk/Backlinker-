@@ -8,7 +8,7 @@ replace them.
 
 from fastapi import FastAPI
 
-from app.api import backlinks, competitors, crawl, domains
+from app.api import backlinks, competitors, contacts, crawl, domains
 from app.api.errors import register_error_handlers
 
 
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
     app.include_router(crawl.router)
     app.include_router(backlinks.router)
     app.include_router(competitors.router)
+    app.include_router(contacts.router)
     return app
 
 

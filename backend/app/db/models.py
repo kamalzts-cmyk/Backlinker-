@@ -488,6 +488,16 @@ class ContactVerificationStatus(str, enum.Enum):
     INVALID = "invalid"
 
 
+# Shared instance -- reused on both Contact.verification_status and
+# EmailVerification.result_status. See _LINK_POSITION_TYPE's comment
+# earlier in this file (docs/ARCHITECTURE.md risk #13/#15) for why a
+# fresh `Enum(ContactVerificationStatus, name=...)` per column breaks
+# Alembic autogenerate.
+_CONTACT_VERIFICATION_STATUS_TYPE = Enum(
+    ContactVerificationStatus, name="contact_verification_status"
+)
+
+
 class ContactPageType(str, enum.Enum):
     HOME = "home"
     ABOUT = "about"
@@ -514,7 +524,7 @@ class Contact(TimestampMixin, Base):
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verification_status: Mapped[ContactVerificationStatus] = mapped_column(
-        Enum(ContactVerificationStatus, name="contact_verification_status"),
+        _CONTACT_VERIFICATION_STATUS_TYPE,
         default=ContactVerificationStatus.UNKNOWN,
     )
     confidence_score: Mapped[int] = mapped_column(Integer, default=0)
@@ -544,3 +554,40 @@ class ContactSource(TimestampMixin, Base):
     contact: Mapped[Contact] = relationship(back_populates="sources")
 
     __table_args__ = (UniqueConstraint("contact_id", "source_url", name="uq_contact_source"),)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: email verification (see docs/DATABASE.md, PRODUCT_SPEC.md §4.6
+# §13-14). Deterministic layers only -- syntax, domain DNS existence, MX
+# records, and a disposable-domain list. SMTP-level mailbox/catch-all
+# probing (RCPT TO) needs outbound port 25, which is blocked in this
+# project's build sandbox and, per PRODUCT_SPEC.md, is inherently
+# unreliable and never involves actually sending mail -- see
+# app/engines/contact/verify_email.py's module docstring.
+# ---------------------------------------------------------------------------
+
+
+class EmailVerificationLayer(str, enum.Enum):
+    SYNTAX = "syntax"
+    DNS = "dns"
+    MX = "mx"
+    SMTP = "smtp"  # modeled for completeness; not reachable from this environment
+
+
+class EmailVerification(TimestampMixin, Base):
+    """One row per verification attempt -- kept historical (an address
+    can go from valid to bouncing over time), not overwritten in place.
+    """
+
+    __tablename__ = "email_verifications"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    contact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contacts.id"), index=True)
+    layer_reached: Mapped[EmailVerificationLayer] = mapped_column(
+        Enum(EmailVerificationLayer, name="email_verification_layer")
+    )
+    is_disposable_domain: Mapped[bool] = mapped_column(Boolean, default=False)
+    result_status: Mapped[ContactVerificationStatus] = mapped_column(
+        _CONTACT_VERIFICATION_STATUS_TYPE
+    )
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

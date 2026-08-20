@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and Phase 8 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6, 8, and 9 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -46,12 +46,20 @@ infrastructure:
   uncapped contact records with provenance — never guessing a name/email
   pairing beyond schema.org markup or an unambiguous single-person page.
 - A domain-centric FastAPI layer (`/domains`, `/crawl`, `/backlinks`,
-  `/competitors`, `/link-gaps`) — no `projects`/auth layer exists yet.
+  `/competitors`, `/link-gaps`, `/contacts`) — no `projects`/auth layer
+  exists yet.
+- Email verification: syntax, DNS/MX, and disposable-domain checks,
+  genuinely proven against live DNS (no mocking needed — unlike HTTPS,
+  DNS resolution isn't restricted here). SMTP-level mailbox/catch-all
+  probing is explicitly out of scope: outbound port 25 is blocked in
+  this sandbox, and the product spec is independently skeptical of it —
+  we never send a verification email.
 
-80 tests pass, almost all against real infrastructure (a real fixture
+92 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
-database, real live crawls/verification/contact-discovery against real
-public sites). Two honest caveats, not glossed over: Common Crawl's own
+database, real live crawls/verification/contact-discovery/DNS lookups
+against real public sites/domains). Two honest caveats, not glossed
+over: Common Crawl's own
 servers aren't reachable from this particular build sandbox, so that one
 connector is tested against realistic fixtures rather than the live
 service (needs a live smoke test before production use); and **Phase 7

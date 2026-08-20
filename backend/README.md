@@ -1,9 +1,9 @@
 # backend
 
-FastAPI project. **Phases 1-6 and Phase 8 (real crawler, full page/link
+FastAPI project. **Phases 1-6, 8, and 9 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
-competitor/link-gap engine, a real API layer, and contact intelligence)
-are implemented and tested** — see `app/crawler/`,
+competitor/link-gap engine, a real API layer, contact intelligence, and
+email verification) are implemented and tested** — see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
 `app/engines/contact/`, and `app/api/`. Run it with `uvicorn app.main:app
 --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
@@ -59,6 +59,12 @@ test before depending on it in production.
   rows with full provenance (`ContactSource`). Never guesses a name/email
   pairing beyond schema.org `Person` markup or an unambiguous
   single-person page. See `PRODUCT_SPEC.md` §4.6.
+- `app/engines/contact/verify_email.py` — email verification: syntax,
+  DNS/MX (with the RFC 5321 A-record fallback), and a disposable-domain
+  list. Deliberately does not attempt SMTP-level mailbox/catch-all
+  probing (would need outbound port 25, blocked here) or send any
+  verification email, per `PRODUCT_SPEC.md` §13. Ceiling is `LIKELY`,
+  never `VERIFIED`/`CATCH_ALL` — see the module docstring.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
@@ -73,7 +79,7 @@ test before depending on it in production.
   contact_sources). See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 80 tests, all real except the Common Crawl HTTP layer
+- `app/tests/` — 92 tests, all real except the Common Crawl HTTP layer
   (see the Phase 4 caveat above): unit tests for normalization/
   fingerprinting/JS-detection/extraction/classification/CDX-parsing
   against local HTML fixtures (`app/tests/fixtures/html/`), and
@@ -156,10 +162,11 @@ asyncio.run(run_crawl("https://example.com", max_pages=10))
   `build_http_crawler`/`build_playwright_crawler`, give it its own
   uniquely-named `RequestQueue` — see `../docs/ARCHITECTURE.md` risk
   #15 for why a fresh `MemoryStorageClient()` alone isn't sufficient.
-- No `/opportunities`, `/prospects`, `/contacts`, etc. API endpoints yet
-  — `app/engines/contact/` exists and is tested but isn't wired into
-  `app/api/` yet. `/link-gaps` is the only "opportunity" view so far, and
-  it's the raw competitor-overlap signal, not a scored opportunity.
+- No `/opportunities` or `/prospects` API endpoints yet (`/contacts`
+  exists as of Phase 9: `GET /contacts?domain_id=`, `POST
+  /contacts/{id}/verify-email`). `/link-gaps` is the only
+  "opportunity"-shaped view so far, and it's the raw competitor-overlap
+  signal, not a scored opportunity.
 - Contact name/role pairing only handles two safe, unambiguous cases
   (schema.org `Person`, single-person pages) by design — a page with
   multiple people and no structured markup yields correctly-unattributed

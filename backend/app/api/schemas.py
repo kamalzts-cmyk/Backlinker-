@@ -86,6 +86,19 @@ class CompetitorRelationshipOut(BaseModel):
     competitor_host: str
 
 
+class ContactOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    domain_id: uuid.UUID
+    name: str | None
+    job_title: str | None
+    email: str | None
+    phone: str | None
+    verification_status: str
+    confidence_score: int
+
+
 class LinkGapOpportunityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

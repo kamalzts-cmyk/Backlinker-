@@ -11,6 +11,7 @@ from app.db.base import session_scope
 from app.db.models import BacklinkSourceType
 from app.engines.backlink.repository import create_candidate
 from app.engines.backlink.verify import verify_candidate
+from app.engines.contact.discover import discover_contacts_for_domain
 from app.main import app
 from app.tests.fixtures.server import FixtureServer
 
@@ -119,3 +120,24 @@ async def test_competitors_and_link_gaps_endpoints_end_to_end():
     assert rows[0]["competitor_overlap_count"] == 1
     assert rows[0]["confidence"] == "low"
     assert "competitor-a.example" in rows[0]["competitor_hosts"]
+
+
+@pytest.mark.asyncio
+async def test_contacts_endpoints_list_and_verify_a_real_contact():
+    with FixtureServer() as base_url:
+        contacts = await discover_contacts_for_domain(f"{base_url}/contact.html", max_pages=1)
+    assert contacts
+
+    domain_id = str(contacts[0].domain_id)
+    response = client.get("/contacts", params={"domain_id": domain_id})
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 2
+    assert {r["email"] for r in rows} == {"info@example.com", "press@example.com"}
+    assert all(r["verification_status"] == "role_address" for r in rows)
+
+    # role addresses on example.com -- real DNS, real MX (example.com has one)
+    contact_id = rows[0]["id"]
+    verify_response = client.post(f"/contacts/{contact_id}/verify-email")
+    assert verify_response.status_code == 200
+    assert verify_response.json()["confidence_score"] > 0
