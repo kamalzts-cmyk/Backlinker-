@@ -103,14 +103,14 @@ split it into a separate deployable in v1).
 │   ├── alembic/
 │   ├── pyproject.toml
 │   └── Dockerfile
-├── frontend/
-│   ├── app/                       # Next.js routes: dashboard, projects, backlinks,
-│   │                               # competitors, link-gap, prospects, contacts,
-│   │                               # authors, guest-posts, opportunities, outreach,
-│   │                               # campaigns, reports, monitoring, data-quality, settings
-│   ├── components/
-│   ├── lib/api-client/            # typed client generated from the API schema
-│   └── Dockerfile
+├── frontend/                      # Next.js (App Router) -- see §4 and frontend/README.md
+│   ├── app/                       # domain-centric routes: dashboard (/), /domains/[id],
+│   │                               # /crawl/[jobId], /backlinks/[id], /campaigns/[id], /reports
+│   │   └── actions.ts             # every Server Action (mutation) in one place
+│   ├── components/                # Section, Badge, EvidenceList, EmptyState, SubmitButton
+│   ├── lib/api.ts                 # typed server-side fetch wrapper (no client-side calls)
+│   ├── lib/types.ts               # TS types mirroring backend/app/api/schemas.py exactly
+│   └── package.json
 ├── docker/
 │   ├── docker-compose.yml         # postgres, redis, ollama, backend, frontend, worker
 │   └── .env.example
@@ -135,13 +135,34 @@ parse). Type hints throughout; `ruff` + `pytest` enforced in CI.
 
 ## 4. Frontend architecture
 
-Next.js, API-first — the frontend is purely a client of the FastAPI
-backend (no server-side data mutation logic duplicated in the frontend).
-One route per module listed in the repo structure above. Every list view
-needs: table, filters, search, sort, evidence/source drill-down, and an
-explicit empty state (never a placeholder number). Avoid a generic SaaS
-template feel — prioritize dense data tables, provenance/confidence
-badges, and evidence panels over marketing-style cards.
+**Done** — see `frontend/README.md` for the full account. Next.js
+(App Router), API-first: the frontend is purely a client of the FastAPI
+backend, no server-side data mutation logic duplicated in the frontend.
+Adapted to the backend's *real* domain-centric route surface (no
+`projects`/auth layer exists — see §9) rather than the aspirational
+per-module route list this section originally sketched: pages are
+organized around a domain detail hub (`/domains/[id]`) plus focused
+detail pages for a crawl job, a backlink, and a campaign, instead of one
+flat route per engine.
+
+Every backend call runs server-side — reads in `async` Server
+Components (`fetch`, `cache: "no-store"`), writes via Server Actions
+(`'use server'`, `revalidatePath`) — so the browser never talks to the
+backend directly. That means zero CORS configuration on the backend and
+`API_URL` never reaching the client bundle, at the cost of every
+mutation being a full-page server round-trip rather than an optimistic
+client update; acceptable for a single-operator tool with no realtime
+requirement. The one exception is report downloads (`GET
+/reports/download`), a Next.js Route Handler that proxies bytes/headers
+straight through from the backend, since a Server Action can't hand the
+browser a file to save.
+
+List views use dense HTML tables, provenance/confidence badges, and
+inline evidence lists rather than marketing-style cards, per this
+section's original intent — no separate component library was added
+for that; a handful of shared primitives in `frontend/components/`
+(`Section`, `Badge`, `EvidenceList`, `EmptyState`) do the job. Every
+list renders an explicit empty state, never a placeholder number.
 
 ## 5. Crawler architecture (summary — full detail in `CRAWLER.md`)
 
@@ -207,7 +228,7 @@ phase. "Frontend renders" is never sufficient on its own.
 | 3 ✅ | Backlink verification pipeline | **Done.** `BacklinkCandidate` → direct crawl (reuses the Phase 1/2 crawler) → `BacklinkObservation` (`VERIFIED`/`REJECTED` with reason) → derived `backlinks` current-state row with first/last-seen. Verified against a real live backlink (pypi.org homepage → `/help/`, correct anchor/rel/nav-classification) plus 9 tests covering VERIFIED, nofollow/sponsored detection, target-not-found rejection, and source-unreachable rejection — all against a real fixture server and real Postgres. See `backend/app/engines/backlink/`. |
 | 4 ✅ | Common Crawl connector | **Done, with a caveat.** CDX index query + WARC-record Range-fetch (reusing the Phase 2 link extractor on the fetched HTML) produces real `BacklinkCandidate` rows that flow straight into Phase 3 verification — proven end-to-end against a real Postgres database and a real live verification pass. The one piece not independently proven is the raw HTTP calls to Common Crawl's own servers: `index.commoncrawl.org`/`data.commoncrawl.org` are policy-denied by *this build sandbox's* egress proxy (confirmed via the proxy's diagnostic log — a real, persistent policy denial, not a flake), so those two endpoints are tested against fixtures shaped exactly like their documented real response formats (CDX JSON, gzip WARC records) rather than the live service. Needs one live smoke test in an environment with normal internet access before fully trusting it in production — see risk #14. |
 | 5 ✅ | Competitor engine | **Done.** `CompetitorRelationship` (domain-keyed, no `projects` table needed yet) + `compute_link_gap()`, a pure query over existing `backlinks` rows — "crawling a competitor" is just Phase 3/4 discovery/verification run with the competitor's domain as the target, no new crawl mechanism needed. Proven with a fully real multi-domain scenario (distinct loopback addresses as genuinely separate source domains, real crawls, real Postgres), confirming correct overlap counting/tiering and correct exclusion of domains that already link to the primary. Surfaced and fixed a real Crawlee bug in the process — see risk #15. |
-| 6 ✅ | Link gap engine + API | **Done** (API only — no frontend yet, see §11). Introduces `app/api/` (FastAPI, domain-centric since no `projects`/auth layer exists yet): `/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`. `/link-gaps` recomputes on every call (cheap query over `backlinks`) and returns real, evidenced opportunities — proven via `TestClient` driving the real route handlers against a real Postgres test database, including a real crawl through `/crawl` and a real verified backlink through `/backlinks`. |
+| 6 ✅ | Link gap engine + API | **Done** (API only at the time — the frontend consuming it was built later, see §4). Introduces `app/api/` (FastAPI, domain-centric since no `projects`/auth layer exists yet): `/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`. `/link-gaps` recomputes on every call (cheap query over `backlinks`) and returns real, evidenced opportunities — proven via `TestClient` driving the real route handlers against a real Postgres test database, including a real crawl through `/crawl` and a real verified backlink through `/backlinks`. |
 | 7 | Prospect discovery | Independently discovered prospects (not just competitor-derived) with topical scores |
 | 8 ✅ | Contact intelligence | **Done.** Reuses the Phase 1/2 crawler (no separate contact-crawling mechanism); classifies contact-relevant pages by URL path (about/contact/team/author/guest-post/press) and turns Phase 2's page-level `contact_emails`/`contact_phones`/`schema_org` into full, uncapped `Contact` rows with provenance. Deliberately refuses to guess a name/email pairing beyond schema.org `Person` markup or an unambiguous single-person page (exactly one heading + one email) — proven by a test asserting a multi-person team page leaves names unattributed rather than mis-paired. 11 new tests, all real (fixture server + real Postgres). Live-checked against pypi.org: correctly returned zero contacts, since its crawl-reachable pages don't include an about/contact/team page — an honest negative result, not a bug. |
 | 9 ✅ | Email verification | **Done for the deterministic layers.** Syntax, domain DNS/MX (with RFC 5321 A-record fallback), and a disposable-domain list — genuinely proven with real, live DNS lookups (no mocking needed; unlike HTTPS, DNS resolution isn't restricted in this sandbox). SMTP-level mailbox/catch-all probing is out of scope, not silently skipped: outbound port 25 is blocked here (confirmed with a direct TCP connect test) and PRODUCT_SPEC.md is independently skeptical of it — we never send a verification email. Ceiling is `LIKELY`, never `VERIFIED`/`CATCH_ALL`. `EmailVerification` keeps a full history per contact; `POST /contacts/{id}/verify-email` exposes it. |

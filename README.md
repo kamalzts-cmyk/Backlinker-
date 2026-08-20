@@ -26,8 +26,9 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and 8-18 are done** (Phase 7 is intentionally skipped —
-see below). What exists and is tested, end to end, against real
+**Backend phases 0-6 and 8-18 are done, and the Next.js frontend is now
+a real client of that API** (Phase 7 is intentionally skipped — see
+below). What exists and is tested, end to end, against real
 infrastructure:
 
 - A two-tier crawler (Crawlee HTTP-first, Playwright fallback) extracting
@@ -107,8 +108,17 @@ infrastructure:
   checked?) — but no concrete answer-engine integration ships, since
   unlike Ollama there's no free/self-hostable one to build and verify a
   real integration against; a paid API's wire format isn't guessed at.
+- A Next.js frontend (App Router, Server Components + Server Actions,
+  no client-side API calls, so the backend needs no CORS config) covers
+  the full flow through the browser: register a domain, run a crawl,
+  discover contacts and verify email, check for a guest-post program,
+  view the opportunity score, track competitors and see link gaps,
+  generate an outreach strategy and start a campaign, log GEO citation
+  observations, recheck a backlink, and download a real report. Verified
+  against a live backend via Playwright, not just a build check — see
+  `frontend/README.md`.
 
-150 tests pass, almost all against real infrastructure (a real fixture
+154 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
 against real public sites/domains). Four honest caveats, not glossed
@@ -127,10 +137,13 @@ made. Building this also surfaced and fixed a genuine Crawlee bug
 (cross-run request-queue state leaking between separate crawl jobs in
 the same process — see `docs/ARCHITECTURE.md` risk #15).
 
-See [`backend/README.md`](./backend/README.md) for exactly what's
-implemented, how to run it, and the full list of known follow-ups. Only
-the frontend remains unbuilt, per the build order in `PRODUCT_SPEC.md`
-§9 — no premature scaffolding ahead of working code underneath it.
+See [`backend/README.md`](./backend/README.md) and
+[`frontend/README.md`](./frontend/README.md) for exactly what's
+implemented, how to run each half, and the full list of known
+follow-ups. Every phase in the build order in `PRODUCT_SPEC.md` §9 that
+doesn't need an outside decision (Phase 7's search backend, Phase 18's
+answer-engine provider) is now built — no premature scaffolding ahead
+of working code underneath it.
 
 ```
 docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama
