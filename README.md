@@ -26,19 +26,23 @@ default provider) · Docker.
 
 ## Status
 
-**Phase 0 (architecture), Phase 1 (real crawler), Phase 2 (full
-page/link extraction), and Phase 3 (backlink verification) are done.** A
-working, tested, two-tier crawler (Crawlee HTTP-first with a Playwright
-fallback) that extracts page metadata, schema.org/OpenGraph/Twitter
-Cards, images, PDF/social links, embeds, and candidate contact info, plus
-a direct backlink verification pipeline (crawl a claimed source page for
-real, confirm the link is actually there, record anchor/rel/context with
-first/last-seen history) — see [`backend/README.md`](./backend/README.md)
-for what's implemented, how to run it, and known follow-ups. 51 tests
-pass, including real integration tests against a local fixture server and
-a real Postgres database (no mocks), plus manually-verified live crawls
-and backlink verification against a real public site (rows inspected
-directly in Postgres). Everything past this (Common Crawl discovery,
+**Phase 0 (architecture) through Phase 4 (Common Crawl connector) are
+done.** A working, tested, two-tier crawler (Crawlee HTTP-first with a
+Playwright fallback) that extracts page metadata, schema.org/OpenGraph/
+Twitter Cards, images, PDF/social links, embeds, and candidate contact
+info; a direct backlink verification pipeline (crawl a claimed source
+page for real, confirm the link is actually there, record anchor/rel/
+context with first/last-seen history); and a Common Crawl connector that
+turns a seed domain's Common-Crawl-captured pages into verification
+candidates — see [`backend/README.md`](./backend/README.md) for what's
+implemented, how to run it, and known follow-ups (including one honest
+caveat: Common Crawl's own servers aren't reachable from this particular
+build sandbox, so that one connector is tested against realistic fixtures
+rather than the live service — needs a live smoke test before production
+use). 62 tests pass, nearly all against real infrastructure (a real
+fixture HTTP server, a real Postgres database, real live crawls and
+backlink verification against a real public site, with rows inspected
+directly in Postgres). Everything past this (search-pattern discovery,
 competitor/prospect/contact engines, API, frontend) is still empty
 pending its own phase, per the build order in `PRODUCT_SPEC.md` §9 — no
 premature scaffolding ahead of working code underneath it.

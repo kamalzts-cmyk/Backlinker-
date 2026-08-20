@@ -1,12 +1,19 @@
 # backend
 
 FastAPI project. **Phase 1 (real crawler), Phase 2 (full page/link
-extraction), and Phase 3 (backlink verification) are implemented and
-tested** — see `app/crawler/` and `app/engines/backlink/`. The API layer
-(`app/api/`) and the rest of the intelligence engines
-(`app/engines/{competitor,prospect,contact,...}/`) are still empty
-pending their own phases (`../PRODUCT_SPEC.md` §9, `../docs/ARCHITECTURE.md`
-§9) — no premature scaffolding ahead of working code underneath it.
+extraction), Phase 3 (backlink verification), and Phase 4 (Common Crawl
+connector) are implemented and tested** — see `app/crawler/` and
+`app/engines/backlink/`. The API layer (`app/api/`) and the rest of the
+intelligence engines (`app/engines/{competitor,prospect,contact,...}/`)
+are still empty pending their own phases (`../PRODUCT_SPEC.md` §9,
+`../docs/ARCHITECTURE.md` §9) — no premature scaffolding ahead of working
+code underneath it.
+
+**Phase 4 caveat:** Common Crawl's own servers are unreachable from this
+build sandbox (policy-denied at the network layer, not a bug — see
+`../docs/ARCHITECTURE.md` risk #14) so that one connector is tested
+against realistic fixtures rather than the live service. Run a live smoke
+test before depending on it in production.
 
 ## What's here
 
@@ -25,18 +32,29 @@ pending their own phases (`../PRODUCT_SPEC.md` §9, `../docs/ARCHITECTURE.md`
   link is actually there, producing a `VERIFIED` or `REJECTED`
   `BacklinkObservation` plus a derived current-state `backlinks` row with
   first/last-seen. See `../docs/CRAWLER.md` §6.
+- `app/engines/backlink/common_crawl.py` — the Common Crawl connector:
+  queries the CDX index for a seed domain's captured pages, Range-fetches
+  each one's raw WARC content directly from Common Crawl's data server
+  (no live crawl needed just to check it), and reuses the Phase 2 link
+  extractor to check for a link to the target, producing
+  `BacklinkCandidate` rows for Phase 3 to verify. See its module
+  docstring for exactly what Common Crawl's public CDX API can and can't
+  answer.
 - `app/db/models.py` — the crawl-layer schema (domains, crawl_jobs,
   crawl_requests, crawl_errors, pages, page_links) plus the backlink
   engine schema (backlink_candidates, backlink_observations, backlinks).
   See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 51 tests, all real: unit tests for normalization/
-  fingerprinting/JS-detection/extraction/classification against local
-  HTML fixtures (`app/tests/fixtures/html/`), and integration tests that
-  run the actual crawler and backlink verification pipeline against a
-  local fixture HTTP server (`app/tests/fixtures/server.py`) and a real
-  Postgres test database — no mocked HTTP, no mocked DB.
+- `app/tests/` — 62 tests, all real except the Common Crawl HTTP layer
+  (see the Phase 4 caveat above): unit tests for normalization/
+  fingerprinting/JS-detection/extraction/classification/CDX-parsing
+  against local HTML fixtures (`app/tests/fixtures/html/`), and
+  integration tests that run the actual crawler and backlink
+  verification pipeline against a local fixture HTTP server
+  (`app/tests/fixtures/server.py`) and a real Postgres test database —
+  no mocked HTTP, no mocked DB, anywhere except the Common Crawl
+  connector's own external calls.
 
 ## Running it
 
@@ -97,3 +115,12 @@ asyncio.run(run_crawl("https://example.com", max_pages=10))
   type (e.g. another `link_position` column), autogenerate's migration
   needs a hand-edit — see `../docs/ARCHITECTURE.md` risk #13 and
   `alembic/versions/4d4f7236ee73_*.py` for the pattern.
+- The Common Crawl connector needs a *seed domain* to check (a
+  competitor, a known publisher, etc.) — it does not discover "every
+  site on the web that might link to X" by itself (that reverse-index
+  query isn't available through the free CDX API; see the module
+  docstring). It's one candidate source among several; search-pattern
+  discovery (Phase 7) is the other free one from `PRODUCT_SPEC.md` §4.2
+  Layer 2, not built yet. Run a live smoke test against the real Common
+  Crawl service before depending on this in production — see
+  `../docs/ARCHITECTURE.md` risk #14.
