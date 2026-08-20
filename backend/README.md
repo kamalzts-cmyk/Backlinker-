@@ -1,13 +1,14 @@
 # backend
 
-FastAPI project. **Phases 1-5 (real crawler, full page/link extraction,
+FastAPI project. **Phases 1-6 (real crawler, full page/link extraction,
 backlink verification, Common Crawl connector, competitor/link-gap
-engine) are implemented and tested** — see `app/crawler/`,
-`app/engines/backlink/`, and `app/engines/competitor/`. The API layer
-(`app/api/`) and the rest of the intelligence engines
-(`app/engines/{prospect,contact,...}/`) are still empty pending their own
-phases (`../PRODUCT_SPEC.md` §9, `../docs/ARCHITECTURE.md` §9) — no
-premature scaffolding ahead of working code underneath it.
+engine, and a real API layer) are implemented and tested** — see
+`app/crawler/`, `app/engines/backlink/`, `app/engines/competitor/`, and
+`app/api/`. Run it with `uvicorn app.main:app --reload`. The rest of the
+intelligence engines (`app/engines/{prospect,contact,...}/`) and the
+frontend are still empty pending their own phases (`../PRODUCT_SPEC.md`
+§9, `../docs/ARCHITECTURE.md` §9) — no premature scaffolding ahead of
+working code underneath it.
 
 **Phase 4 caveat:** Common Crawl's own servers are unreachable from this
 build sandbox (policy-denied at the network layer, not a bug — see
@@ -48,6 +49,12 @@ test before depending on it in production.
   discovery/verification run with the competitor's domain as the
   verification target; no new crawl mechanism here. See
   `PRODUCT_SPEC.md` §4.3/§13-14.
+- `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
+  (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) since
+  there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
+  `app/api/deps.py` (FastAPI runs sync route functions in a threadpool).
+  Errors follow `../docs/API.md`'s `{"error": {"code","message","detail"}}`
+  shape (`app/api/errors.py`).
 - `app/db/models.py` — the crawl-layer schema (domains, crawl_jobs,
   crawl_requests, crawl_errors, pages, page_links), the backlink engine
   schema (backlink_candidates, backlink_observations, backlinks), and the
@@ -55,16 +62,16 @@ test before depending on it in production.
   link_gap_opportunities). See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 64 tests, all real except the Common Crawl HTTP layer
+- `app/tests/` — 69 tests, all real except the Common Crawl HTTP layer
   (see the Phase 4 caveat above): unit tests for normalization/
   fingerprinting/JS-detection/extraction/classification/CDX-parsing
   against local HTML fixtures (`app/tests/fixtures/html/`), and
   integration tests that run the actual crawler, backlink verification,
-  and competitor/link-gap pipelines against a local fixture HTTP server
-  (`app/tests/fixtures/server.py`, which can bind multiple loopback
-  addresses to simulate genuinely distinct source domains) and a real
-  Postgres test database — no mocked HTTP, no mocked DB, anywhere except
-  the Common Crawl connector's own external calls.
+  competitor/link-gap, and API pipelines against a local fixture HTTP
+  server (`app/tests/fixtures/server.py`, which can bind multiple
+  loopback addresses to simulate genuinely distinct source domains) and a
+  real Postgres test database — no mocked HTTP, no mocked DB, anywhere
+  except the Common Crawl connector's own external calls.
 
 ## Running it
 
@@ -138,6 +145,10 @@ asyncio.run(run_crawl("https://example.com", max_pages=10))
   `build_http_crawler`/`build_playwright_crawler`, give it its own
   uniquely-named `RequestQueue` — see `../docs/ARCHITECTURE.md` risk
   #15 for why a fresh `MemoryStorageClient()` alone isn't sufficient.
+- No `/opportunities`, `/prospects`, `/contacts`, etc. yet — those wait
+  on their own engines (Phase 7+). `/link-gaps` is the only "opportunity"
+  view so far, and it's the raw competitor-overlap signal, not a scored
+  opportunity.
 - Link-gap opportunities are keyed on `competitor_overlap_count` and a
   simple deterministic confidence tier (1→LOW, 2→MEDIUM, 3+→HIGH) — this
   is not the full weighted Opportunity Score from `PRODUCT_SPEC.md` §4.5

@@ -26,8 +26,9 @@ default provider) · Docker.
 
 ## Status
 
-**Phase 0 (architecture) through Phase 5 (competitor engine / link gap)
-are done.** A working, tested, two-tier crawler (Crawlee HTTP-first with
+**Phase 0 (architecture) through Phase 6 (link gap engine + API) are
+done.** A real FastAPI layer now sits on top of everything below (run
+with `uvicorn app.main:app --reload` from `backend/`). A working, tested, two-tier crawler (Crawlee HTTP-first with
 a Playwright fallback) that extracts page metadata, schema.org/
 OpenGraph/Twitter Cards, images, PDF/social links, embeds, and candidate
 contact info; a direct backlink verification pipeline (crawl a claimed
@@ -41,16 +42,19 @@ what's implemented, how to run it, and known follow-ups (including one
 honest caveat: Common Crawl's own servers aren't reachable from this
 particular build sandbox, so that one connector is tested against
 realistic fixtures rather than the live service — needs a live smoke
-test before production use). 64 tests pass, nearly all against real
+test before production use); and a domain-centric FastAPI layer
+(`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) proven
+with `TestClient` driving the real route handlers, real engines, and a
+real Postgres test database. 69 tests pass, nearly all against real
 infrastructure (a real fixture HTTP server that can simulate multiple
 distinct domains, a real Postgres database, real live crawls and
 backlink verification against a real public site, with rows inspected
-directly in Postgres). Building this phase also surfaced and fixed a
-genuine Crawlee bug (cross-run request-queue state leaking between
-separate crawl jobs in the same process — see `docs/ARCHITECTURE.md`
-risk #15). Everything past this (search-pattern discovery, prospect/
-contact engines, API, frontend) is still empty pending its own phase,
-per the build order in `PRODUCT_SPEC.md` §9 — no premature scaffolding
+directly in Postgres). Building this also surfaced and fixed a genuine
+Crawlee bug (cross-run request-queue state leaking between separate
+crawl jobs in the same process — see `docs/ARCHITECTURE.md` risk #15).
+Everything past this (search-pattern discovery, prospect/contact
+engines, frontend) is still empty pending its own phase, per the build
+order in `PRODUCT_SPEC.md` §9 — no premature scaffolding
 ahead of working code underneath it.
 
 ```
