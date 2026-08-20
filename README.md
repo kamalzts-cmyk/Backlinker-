@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and 8-17 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6 and 8-18 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -98,28 +98,39 @@ infrastructure:
   engine already collected and verified; the export layer adds no new
   computation, and each file format is a real one its own
   library/reader can open, not a stub with the right extension.
+- AI-search/GEO intelligence: an append-only log of
+  `{query, engine, timestamp, observed_result, source_url}`
+  observations behind every citation claim, never asserted bare. A
+  human can log what they saw checking a real answer engine themselves
+  (no API needed), and the automated path's citation matching is
+  deterministic (does a returned URL resolve to the domain being
+  checked?) — but no concrete answer-engine integration ships, since
+  unlike Ollama there's no free/self-hostable one to build and verify a
+  real integration against; a paid API's wire format isn't guessed at.
 
-143 tests pass, almost all against real infrastructure (a real fixture
+150 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
-against real public sites/domains). Three honest caveats, not glossed
-over: Common Crawl's own servers, and Ollama itself, aren't reachable
+against real public sites/domains). Four honest caveats, not glossed
+over: Common Crawl's own servers and Ollama itself aren't reachable
 from this particular build sandbox, so those two integrations are tested
 against realistic fixtures / mocked HTTP shaped exactly like the real
 documented APIs rather than the live services (both need a live smoke
 test before production use — see `docs/ARCHITECTURE.md` risks #14 and
-#17); and **Phase 7 (search-pattern prospect discovery) is skipped**
-because it needs a search-backend decision — paid API, self-hosted
-SearX, or scraping — that hasn't been made. Building this also surfaced
-and fixed a genuine Crawlee bug (cross-run request-queue state leaking
-between separate crawl jobs in the same process — see
-`docs/ARCHITECTURE.md` risk #15).
+#17); no AI-search/GEO citation provider ships at all, since unlike
+Ollama there's no free/self-hostable answer-engine API to build and
+verify a real integration against without guessing at a paid API's wire
+format (`docs/ARCHITECTURE.md` risk #18); and **Phase 7 (search-pattern
+prospect discovery) is skipped** because it needs a search-backend
+decision — paid API, self-hosted SearX, or scraping — that hasn't been
+made. Building this also surfaced and fixed a genuine Crawlee bug
+(cross-run request-queue state leaking between separate crawl jobs in
+the same process — see `docs/ARCHITECTURE.md` risk #15).
 
 See [`backend/README.md`](./backend/README.md) for exactly what's
-implemented, how to run it, and the full list of known follow-ups.
-Everything past this (AI-search/GEO intelligence, frontend) is still
-empty pending its own phase, per the build order in `PRODUCT_SPEC.md` §9
-— no premature scaffolding ahead of working code underneath it.
+implemented, how to run it, and the full list of known follow-ups. Only
+the frontend remains unbuilt, per the build order in `PRODUCT_SPEC.md`
+§9 — no premature scaffolding ahead of working code underneath it.
 
 ```
 docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama

@@ -896,3 +896,69 @@ class BacklinkMonitoringEvent(TimestampMixin, Base):
     after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     detail: Mapped[str] = mapped_column(Text)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Phase 18: AI-search / GEO intelligence (see PRODUCT_SPEC.md §4.8):
+#
+#   "AI Search / GEO intelligence -- track whether/which publishers get
+#   cited by answer engines for relevant queries. Every such claim
+#   requires a logged {query, engine, timestamp, observed_result,
+#   source_url} observation -- never asserted without one."
+#
+# GEOObservation is that log -- append-only time series, one row per
+# check, never upserted to a "current state" (unlike Backlink), because
+# the spec's own framing is about a history of checks over time, and an
+# answer engine's response to the same query can genuinely differ
+# between checks.
+#
+# Two ways a row gets created (see app/engines/geo/citations.py):
+#   1. record_manual_observation() -- a human checked a real answer
+#      engine themselves (ChatGPT, Perplexity, Google AI Overviews, ...)
+#      and logs exactly what they saw. Needs no API integration at all,
+#      and is a completely legitimate way to satisfy "never asserted
+#      without a logged observation" -- PRODUCT_SPEC.md never requires
+#      the check to be automated, only that it's evidenced.
+#   2. check_citation() -- automated, via an AISearchProvider. Unlike
+#      Phase 13's Ollama, there is no free/open-source, self-hostable
+#      "answer engine" API this project can build a concrete, verifiable
+#      integration against right now: the real paid APIs that return
+#      citations (Perplexity, etc.) are keyed, and this sandbox can't
+#      confirm their current documented request/response shape closely
+#      enough to implement one without guessing at wire-format details --
+#      a materially different situation from Ollama (self-hostable,
+#      well-established documented API) or Common Crawl (public,
+#      unauthenticated, well-established documented API). Shipping a
+#      "real" provider implementation built on an unverified guess would
+#      be exactly the kind of fabrication PRODUCT_SPEC.md warns against,
+#      just moved into code instead of into a number. So Phase 18 ships
+#      the interface, the deterministic citation-matching logic, and a
+#      FakeAISearchProvider test double proving that logic is correct --
+#      same posture as Phase 7's skipped search-backend decision, not
+#      Phase 13's "built, just unreachable here" one. See
+#      docs/ARCHITECTURE.md risk #18.
+# ---------------------------------------------------------------------------
+
+
+class GEOCitationResult(str, enum.Enum):
+    CITED = "cited"
+    NOT_CITED = "not_cited"
+
+
+class GEOObservation(TimestampMixin, Base):
+    __tablename__ = "geo_observations"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    query: Mapped[str] = mapped_column(Text)
+    engine: Mapped[str] = mapped_column(String(255))
+    target_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    observed_result: Mapped[GEOCitationResult] = mapped_column(
+        Enum(GEOCitationResult, name="geo_citation_result")
+    )
+    # The specific cited URL, when observed_result is CITED -- None
+    # otherwise. Never fabricated: only set from an actual citation in
+    # the answer engine's response (automated path) or what the human
+    # says they saw (manual path).
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    answer_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

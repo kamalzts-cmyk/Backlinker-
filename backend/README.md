@@ -1,17 +1,18 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-17 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-18 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
 competitor/link-gap engine, a real API layer, contact intelligence,
 email verification, guest-post intelligence, opportunity scoring,
 evidence-on-every-opportunity, an AI provider layer, outreach strategy
-generation, campaign funnel tracking, backlink monitoring, and
-reports/exports) are
+generation, campaign funnel tracking, backlink monitoring,
+reports/exports, and AI-search/GEO intelligence) are
 implemented and tested** — see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
 `app/engines/contact/`, `app/engines/guest_post/`,
 `app/engines/scoring/`, `app/engines/ai/`, `app/engines/outreach/`,
-`app/engines/campaigns/`, `app/engines/monitoring/`, `app/reports/`, and
+`app/engines/campaigns/`, `app/engines/monitoring/`, `app/reports/`,
+`app/engines/geo/`, and
 `app/api/`. Run it with `uvicorn
 app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
 now — it needs a search-backend decision (paid API vs. self-hosted vs.
@@ -33,6 +34,18 @@ see `../docs/ARCHITECTURE.md` risk #17), so `app/engines/ai/ollama_provider.py`
 is tested against Ollama's real documented request/response shape with
 the HTTP transport mocked, not a live server. Run a live smoke test
 before depending on it in production.
+
+**Phase 18 caveat, a different shape:** no concrete `AISearchProvider`
+ships at all, not even one whose live reachability is unverified. There
+is no free/self-hostable answer-engine API to build a genuine,
+verifiable integration against the way Ollama's documented API allowed
+(see `../docs/ARCHITECTURE.md` risk #18) — the real paid APIs are
+key-gated and this sandbox can't confirm their current wire format
+closely enough to implement one without guessing. `app/engines/geo/`
+ships the interface, the deterministic citation-matching logic, and a
+`FakeAISearchProvider` test double instead; picking and implementing a
+real provider is future work, same posture as Phase 7's skipped
+search-backend decision.
 
 ## What's here
 
@@ -143,10 +156,19 @@ before depending on it in production.
   populated — no new computation. `export.py` writes CSV/JSON (stdlib),
   XLSX (`openpyxl`), and PDF (`reportlab`) — real files each format's
   own library can read back. `GET /reports/{report_type}?format=...`.
+- `app/engines/geo/` — AI-search/GEO intelligence (Phase 18,
+  `PRODUCT_SPEC.md` §4.8): `GEOObservation` is the append-only
+  `{query, engine, timestamp, observed_result, source_url}` log the spec
+  requires behind every citation claim. `record_manual_observation()`
+  needs no API at all — a human who checked a real answer engine logs
+  what they saw. `check_citation()` is the automated path via an
+  `AISearchProvider`, with deterministic registrable-domain matching
+  against whatever citation URLs a provider returns — but no concrete
+  provider ships yet; see the Phase 18 caveat above.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`,
   `/contacts`, `/guest-posts`, `/opportunities`, `/outreach`,
-  `/campaigns`, `/reports`) since
+  `/campaigns`, `/reports`, `/geo`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
   `app/api/deps.py` (FastAPI runs sync route functions in a threadpool).
   Errors follow `../docs/API.md`'s `{"error": {"code","message","detail"}}`
@@ -162,8 +184,9 @@ before depending on it in production.
   `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 143 tests, all real except the Common Crawl and Ollama
-  HTTP layers (see the Phase 4 and Phase 13 caveats above): unit tests
+- `app/tests/` — 150 tests, all real except the Common Crawl and Ollama
+  HTTP layers and the (nonexistent) answer-engine calls (see the Phase 4,
+  Phase 13, and Phase 18 caveats above): unit tests
   for normalization/fingerprinting/JS-detection/extraction/
   classification/CDX-parsing against local HTML fixtures
   (`app/tests/fixtures/html/`), unit tests for `OllamaProvider`'s request/
@@ -172,7 +195,8 @@ before depending on it in production.
   parser/reader), and integration tests
   that run the actual crawler, backlink verification, competitor/
   link-gap, contact/guest-post/opportunity, outreach-strategy,
-  campaign-funnel, backlink-monitoring, and report-generation pipelines
+  campaign-funnel, backlink-monitoring, report-generation, and
+  GEO-citation pipelines
   against a local fixture HTTP server
   (`app/tests/fixtures/server.py`, which can bind multiple loopback
   addresses to simulate genuinely distinct source domains) and a real
@@ -180,7 +204,10 @@ before depending on it in production.
   the Common Crawl connector's and Ollama provider's own external calls.
   `app/tests/fixtures/fake_ai_provider.py`'s `FakeAIProvider` is a
   reusable in-memory `AIProvider` test double for later phases that
-  consume AI without depending on Ollama being reachable.
+  consume AI without depending on Ollama being reachable, and
+  `app/tests/fixtures/fake_ai_search_provider.py`'s `FakeAISearchProvider`
+  does the same for `AISearchProvider` (Phase 18), since no concrete
+  answer-engine integration exists to test against at all.
 
 ## Running it
 

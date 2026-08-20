@@ -15,6 +15,7 @@ from app.api import (
     contacts,
     crawl,
     domains,
+    geo,
     guest_posts,
     opportunities,
     outreach,
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     app.include_router(outreach.router)
     app.include_router(campaigns.router)
     app.include_router(reports.router)
+    app.include_router(geo.router)
     return app
 
 

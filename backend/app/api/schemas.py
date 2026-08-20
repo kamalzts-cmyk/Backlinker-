@@ -205,3 +205,16 @@ class BacklinkMonitoringEventOut(BaseModel):
     after_state: dict | None
     detail: str
     detected_at: datetime
+
+
+class GEOObservationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    query: str
+    engine: str
+    target_domain_id: uuid.UUID
+    observed_result: str
+    source_url: str | None
+    answer_excerpt: str | None
+    observed_at: datetime

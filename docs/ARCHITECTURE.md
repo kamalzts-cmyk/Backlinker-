@@ -219,7 +219,7 @@ phase. "Frontend renders" is never sufficient on its own.
 | 15 ✅ | Campaigns (human-approved send) | **Done.** `app/engines/campaigns/funnel.py`: a `Campaign` is a record a human creates from an `OutreachStrategy` *after* pitching a contact through their own email client -- there is no `send_email` function anywhere in this codebase, confirmed by grep, not just by claim. `record_event` logs each real-world funnel-stage transition (sent/delivered/bounced/opened/clicked/replied/positive_reply/negative_reply/unsubscribed/published/backlink_detected/backlink_verified) as the human reports it; no ordering is enforced since real outreach doesn't move through these linearly. `check_backlink_detected` is the one non-manual transition: it queries the real Phase 3 `backlinks` table for a link matching the human-supplied `target_url`, and because that table only ever holds already-verified links by construction, BACKLINK_DETECTED and BACKLINK_VERIFIED are recorded together with a note explaining why, rather than faking a gap between them. Proven end-to-end: real contact discovery → real strategy generation → campaign creation → recorded events → a real crawl+verify (Phase 3) producing a real backlink → `check_backlink_detected` correctly finding it and advancing the funnel, with a prior check correctly finding nothing before the backlink existed. `POST /campaigns`, `GET /campaigns/{id}`, `POST /campaigns/{id}/events`, `POST /campaigns/{id}/check-backlink`. 4 new tests, all real, no mocking. |
 | 16 ✅ | Backlink monitoring | **Done** (on-demand re-check; no scheduler wired up -- see the note below). `app/engines/monitoring/recheck.py`'s `recheck_backlink()` re-runs Phase 3's real candidate verification for a tracked backlink's exact (source_url, target_url) pair and diffs the new observation against the previous one, producing explicit before/after `BacklinkMonitoringEvent` rows for exactly what changed (link attributes, anchor text, source HTTP status, canonical URL) -- never a bare "something changed." A rejected re-verification (the link is gone) sets a new `lost_at` timestamp on the `backlinks` row, since a lost link produces no new `BacklinkObservation` to derive state from -- the one intentional, documented exception to that table's "never hand-edited" rule (see `Backlink`'s docstring). "Target changed" from the spec's list isn't attempted: re-verification checks whether *this* target_url is still linked, so a retargeted source page surfaces as LOST, not as a distinguishable "retargeted" event -- not guessed. Proven with 4 real tests: an actual attribute+anchor change detected across two real crawls of the same URL (fixture content temporarily swapped on disk between crawls), a stable link producing zero false-positive events, a genuinely unreachable source correctly producing LOST and setting `lost_at`, and an unknown-backlink error path. `POST /backlinks/{id}/recheck`, `GET /backlinks/{id}/monitoring-events`. Periodic scheduling (a cron/worker calling `recheck_backlink` on a cadence) is not built -- there's no task-queue/scheduler infrastructure in this project yet, and adding one just to call an already-correct function would be exactly the premature scaffolding `PRODUCT_SPEC.md` warns against; the on-demand endpoint is the real, tested primitive a scheduler would call. |
 | 17 ✅ | Reports/exports | **Done.** `app/reports/`: `rows.py` builds real row data for five report types (backlinks, link_gaps, contacts, guest_posts, opportunity_scores) by querying the tables Phases 3/5/8/10/11 already populated -- no new computation, only formatting. `export.py` writes the same row/column shape to CSV and JSON (stdlib), XLSX (`openpyxl`), and PDF (`reportlab`) -- real files each format's own library can read back, not a text file wearing an extension (proven by round-tripping every format through its real parser/reader in tests, and asserting the PDF bytes start with the real `%PDF-` magic number). `GET /reports/{report_type}?format=csv\|json\|xlsx\|pdf&...filters`. 17 new tests (5 unit on the writers, 5 integration proving a backlinks-CSV and contacts-JSON report reflect an actual verified backlink/discovered contact byte-for-value, plus error-path tests, plus 2 API-level). |
-| 18 | AI-search/GEO intelligence | Every citation claim backed by a logged `{query, engine, timestamp, source_url}` observation |
+| 18 ✅ | AI-search/GEO intelligence | **Done, minus a live provider (needs a decision -- see risk #18, same posture as Phase 7).** `GEOObservation` is the append-only `{query, engine, timestamp, observed_result, source_url}` log `PRODUCT_SPEC.md` §4.8 requires -- every citation claim is backed by one, never asserted bare. Two ways to produce one: `record_manual_observation()` (a human checked a real answer engine themselves and logs what they saw -- no API needed, fully legitimate) and `check_citation()` (automated, via an `AISearchProvider`; the citation match itself is deterministic registrable-domain comparison against whatever URLs the provider returns, never a fuzzy judgment call). No concrete `AISearchProvider` ships: unlike Ollama, there's no free/self-hostable answer-engine API this sandbox can build and verify a real integration against, and guessing at a paid API's current wire format would be exactly the fabrication this project refuses to do elsewhere. `check_citation`'s matching logic is proven correct against a `FakeAISearchProvider`. `POST /geo/observations`, `GET /geo/observations` (manual-logging API only -- no automated-check endpoint, since there's no default provider to wire it to). 7 new tests, all real except the fake provider. |
 
 ## 10. Technical risks and contradictions (flagged for review before Phase 1)
 
@@ -378,5 +378,30 @@ phase. "Frontend renders" is never sufficient on its own.
     `respx`-mocked HTTP — but live connectivity to a real `ollama serve`
     has not been exercised here. Run a live smoke test before depending
     on it in production. `app/tests/fixtures/fake_ai_provider.py`'s
-    `FakeAIProvider` lets later phases (14, 18) that consume `AIProvider`
-    be tested without depending on Ollama being reachable at all.
+    `FakeAIProvider` lets Phase 14 (the only consumer of `AIProvider` so
+    far) be tested without depending on Ollama being reachable at all.
+18. **(Confirmed in Phase 18 build) No free/open-source, self-hostable
+    "answer engine" API exists to build a verifiable `AISearchProvider`
+    implementation against, unlike Ollama.** The real APIs that return
+    AI-answer citations (Perplexity, etc.) are paid and key-gated, and
+    this sandbox can't confirm their current documented request/response
+    shape closely enough to implement a genuine integration without
+    guessing at wire-format details -- a materially different situation
+    from Ollama (self-hostable, well-established documented API,
+    confirmed from training knowledge) or Common Crawl (public,
+    unauthenticated, well-established documented API). Shipping a
+    provider implementation built on an unverified guess would be
+    exactly the fabrication `PRODUCT_SPEC.md` warns against, just moved
+    into code instead of into a number, so none ships. Same posture as
+    risk #3's skipped search-backend decision (Phase 7), not risk #17's
+    "built, just unreachable here" one. What *is* built and real: the
+    `AISearchProvider` interface, `GEOObservation`'s append-only
+    `{query, engine, timestamp, observed_result, source_url}` log per
+    `PRODUCT_SPEC.md` §4.8, deterministic registrable-domain citation
+    matching (`app/engines/geo/citations.py`), a
+    `record_manual_observation()` path needing no API integration at all
+    (a human who checked a real answer engine themselves logs what they
+    saw -- fully legitimate per the spec's own wording, which never
+    requires the check to be automated), and a `FakeAISearchProvider`
+    test double proving the matching logic is correct. Revisit once a
+    provider decision is made, the same way Phase 7 is waiting on one.

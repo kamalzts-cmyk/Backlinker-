@@ -329,3 +329,50 @@ def test_reports_endpoint_404_for_unknown_report_type():
     response = client.get("/reports/not_a_real_report")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def test_geo_observations_endpoints_record_and_list_a_real_manual_observation():
+    from app.crawler.repository import get_or_create_domain
+
+    with session_scope() as session:
+        domain = get_or_create_domain(session, raw_host="geo-api-example.com")
+        domain_id = str(domain.id)
+
+    create_response = client.post(
+        "/geo/observations",
+        json={
+            "query": "who writes the best SEO guides",
+            "engine": "chatgpt_search",
+            "target_domain_id": domain_id,
+            "observed_result": "cited",
+            "source_url": "https://geo-api-example.com/guide",
+        },
+    )
+    assert create_response.status_code == 201
+    assert create_response.json()["observed_result"] == "cited"
+
+    list_response = client.get("/geo/observations", params={"target_domain_id": domain_id})
+    assert list_response.status_code == 200
+    rows = list_response.json()
+    assert len(rows) == 1
+    assert rows[0]["source_url"] == "https://geo-api-example.com/guide"
+
+
+def test_geo_observations_endpoint_rejects_cited_without_source_url():
+    from app.crawler.repository import get_or_create_domain
+
+    with session_scope() as session:
+        domain = get_or_create_domain(session, raw_host="geo-api-example-2.com")
+        domain_id = str(domain.id)
+
+    response = client.post(
+        "/geo/observations",
+        json={
+            "query": "x",
+            "engine": "perplexity",
+            "target_domain_id": domain_id,
+            "observed_result": "cited",
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
