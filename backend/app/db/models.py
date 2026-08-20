@@ -386,3 +386,68 @@ class Backlink(TimestampMixin, Base):
     latest_observation: Mapped[BacklinkObservation] = relationship()
 
     __table_args__ = (UniqueConstraint("source_url", "target_url", name="uq_backlinks_source_target"),)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: competitor intelligence + link gap (see docs/DATABASE.md
+# §Competitor intelligence, PRODUCT_SPEC.md §4.3/§7 and §13-14).
+#
+# No "project" concept exists yet (that's the Identity/API layer, not
+# built -- see docs/ARCHITECTURE.md §9). A competitor relationship is
+# just "domain A treats domain B as a competitor," keyed directly on
+# domains like the backlink engine. Link gaps are computed purely from
+# existing `backlinks` rows -- no new crawling mechanism: a "competitor
+# crawl" is just backlink discovery/verification (Phase 3/4) run with the
+# competitor's domain as the target.
+# ---------------------------------------------------------------------------
+
+
+class LinkGapConfidence(str, enum.Enum):
+    """Deterministic tiering from competitor_overlap_count alone --
+    PRODUCT_SPEC.md §13's qualitative examples (1 competitor -> MEDIUM,
+    3 competitors -> HIGH), not the full weighted Opportunity Score
+    (that requires relevance/authority/traffic/etc. and is Phase 11).
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class CompetitorRelationship(TimestampMixin, Base):
+    __tablename__ = "competitor_relationships"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    primary_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    competitor_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+
+    primary_domain: Mapped[Domain] = relationship(foreign_keys=[primary_domain_id])
+    competitor_domain: Mapped[Domain] = relationship(foreign_keys=[competitor_domain_id])
+
+    __table_args__ = (
+        UniqueConstraint("primary_domain_id", "competitor_domain_id", name="uq_competitor_pair"),
+    )
+
+
+class LinkGapOpportunity(TimestampMixin, Base):
+    """One row per (primary_domain, candidate_domain): a domain that
+    links to at least one tracked competitor but not (yet) to the
+    primary domain. Recomputed (upserted) each time compute_link_gap
+    runs -- see app/engines/competitor/gap.py.
+    """
+
+    __tablename__ = "link_gap_opportunities"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    primary_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    candidate_domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    competitor_overlap_count: Mapped[int] = mapped_column(Integer)
+    competitor_domain_ids: Mapped[list] = mapped_column(JSON)  # list of UUID strings
+    confidence: Mapped[LinkGapConfidence] = mapped_column(
+        Enum(LinkGapConfidence, name="link_gap_confidence")
+    )
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("primary_domain_id", "candidate_domain_id", name="uq_link_gap_pair"),
+    )

@@ -120,7 +120,7 @@ async def run_crawl(start_url: str, *, max_pages: int | None = None) -> uuid.UUI
                 detail=detail[:2000],
             )
 
-    http_crawler = build_http_crawler(
+    http_crawler = await build_http_crawler(
         max_pages=max_pages, request_handler=handle_http, failed_request_handler=handle_failed
     )
     seed_urls = [start_url, *sitemap_seed_urls[: max(max_pages - 1, 0)]]
@@ -196,7 +196,7 @@ async def _run_playwright_pass(
         )
         on_page_crawled()
 
-    playwright_crawler = build_playwright_crawler(
+    playwright_crawler = await build_playwright_crawler(
         max_pages=len(urls), request_handler=handle_playwright
     )
     # These URLs were already visited (and marked handled) by the HTTP

@@ -65,16 +65,27 @@ class _FixtureHandler(BaseHTTPRequestHandler):
 
 
 class FixtureServer:
-    """Context manager: `with FixtureServer() as base_url: ...`"""
+    """Context manager: `with FixtureServer() as base_url: ...`
 
-    def __init__(self) -> None:
-        self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), _FixtureHandler)
+    `host` defaults to 127.0.0.1 but accepts any loopback address
+    (127.0.0.2, 127.0.0.3, ...) -- Domain normalization keys on hostname,
+    not port, so multiple FixtureServers all bound to 127.0.0.1 would
+    collapse into a single "domain" for test purposes. Using distinct
+    loopback addresses gives tests genuinely distinct domains (real TCP
+    endpoints, real HTTP, real crawls) without any internet dependency --
+    used by the Phase 5 competitor/link-gap tests, which need several
+    independent "source domains" in one test.
+    """
+
+    def __init__(self, host: str = "127.0.0.1") -> None:
+        self._httpd = ThreadingHTTPServer((host, 0), _FixtureHandler)
+        self._host = host
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
 
     def __enter__(self) -> str:
         self._thread.start()
         port = self._httpd.server_address[1]
-        return f"http://127.0.0.1:{port}"
+        return f"http://{self._host}:{port}"
 
     def __exit__(self, *exc_info) -> None:
         self._httpd.shutdown()

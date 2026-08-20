@@ -26,26 +26,32 @@ default provider) · Docker.
 
 ## Status
 
-**Phase 0 (architecture) through Phase 4 (Common Crawl connector) are
-done.** A working, tested, two-tier crawler (Crawlee HTTP-first with a
-Playwright fallback) that extracts page metadata, schema.org/OpenGraph/
-Twitter Cards, images, PDF/social links, embeds, and candidate contact
-info; a direct backlink verification pipeline (crawl a claimed source
-page for real, confirm the link is actually there, record anchor/rel/
-context with first/last-seen history); and a Common Crawl connector that
+**Phase 0 (architecture) through Phase 5 (competitor engine / link gap)
+are done.** A working, tested, two-tier crawler (Crawlee HTTP-first with
+a Playwright fallback) that extracts page metadata, schema.org/
+OpenGraph/Twitter Cards, images, PDF/social links, embeds, and candidate
+contact info; a direct backlink verification pipeline (crawl a claimed
+source page for real, confirm the link is actually there, record anchor/
+rel/context with first/last-seen history); a Common Crawl connector that
 turns a seed domain's Common-Crawl-captured pages into verification
-candidates — see [`backend/README.md`](./backend/README.md) for what's
-implemented, how to run it, and known follow-ups (including one honest
-caveat: Common Crawl's own servers aren't reachable from this particular
-build sandbox, so that one connector is tested against realistic fixtures
-rather than the live service — needs a live smoke test before production
-use). 62 tests pass, nearly all against real infrastructure (a real
-fixture HTTP server, a real Postgres database, real live crawls and
+candidates; and a competitor/link-gap engine (which domains link to a
+tracked competitor but not yet to you, with a transparent overlap-based
+confidence tier) — see [`backend/README.md`](./backend/README.md) for
+what's implemented, how to run it, and known follow-ups (including one
+honest caveat: Common Crawl's own servers aren't reachable from this
+particular build sandbox, so that one connector is tested against
+realistic fixtures rather than the live service — needs a live smoke
+test before production use). 64 tests pass, nearly all against real
+infrastructure (a real fixture HTTP server that can simulate multiple
+distinct domains, a real Postgres database, real live crawls and
 backlink verification against a real public site, with rows inspected
-directly in Postgres). Everything past this (search-pattern discovery,
-competitor/prospect/contact engines, API, frontend) is still empty
-pending its own phase, per the build order in `PRODUCT_SPEC.md` §9 — no
-premature scaffolding ahead of working code underneath it.
+directly in Postgres). Building this phase also surfaced and fixed a
+genuine Crawlee bug (cross-run request-queue state leaking between
+separate crawl jobs in the same process — see `docs/ARCHITECTURE.md`
+risk #15). Everything past this (search-pattern discovery, prospect/
+contact engines, API, frontend) is still empty pending its own phase,
+per the build order in `PRODUCT_SPEC.md` §9 — no premature scaffolding
+ahead of working code underneath it.
 
 ```
 docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama

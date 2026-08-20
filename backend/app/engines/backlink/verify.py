@@ -23,6 +23,7 @@ from app.db.models import (
     BacklinkRejectionReason,
     CrawlError,
     CrawlErrorReason,
+    CrawlRequest,
     Page,
     PageLink,
 )
@@ -54,7 +55,15 @@ async def verify_candidate(candidate_id: uuid.UUID) -> BacklinkObservation | Non
         candidate = session.get(BacklinkCandidate, candidate_id)
         normalized_source = normalize_url(source_url)
 
-        page = session.scalar(select(Page).where(Page.url == normalized_source))
+        # Scoped to *this* crawl job, not just URL: the same source_url
+        # can legitimately be verified more than once (e.g. checked
+        # against two different competitor targets), which would create
+        # multiple Page rows with the same url across separate jobs.
+        page = session.scalar(
+            select(Page)
+            .join(CrawlRequest, Page.crawl_request_id == CrawlRequest.id)
+            .where(CrawlRequest.crawl_job_id == job_id, Page.url == normalized_source)
+        )
         if page is None:
             return _reject_for_crawl_failure(session, candidate, job_id)
 

@@ -1,13 +1,13 @@
 # backend
 
-FastAPI project. **Phase 1 (real crawler), Phase 2 (full page/link
-extraction), Phase 3 (backlink verification), and Phase 4 (Common Crawl
-connector) are implemented and tested** — see `app/crawler/` and
-`app/engines/backlink/`. The API layer (`app/api/`) and the rest of the
-intelligence engines (`app/engines/{competitor,prospect,contact,...}/`)
-are still empty pending their own phases (`../PRODUCT_SPEC.md` §9,
-`../docs/ARCHITECTURE.md` §9) — no premature scaffolding ahead of working
-code underneath it.
+FastAPI project. **Phases 1-5 (real crawler, full page/link extraction,
+backlink verification, Common Crawl connector, competitor/link-gap
+engine) are implemented and tested** — see `app/crawler/`,
+`app/engines/backlink/`, and `app/engines/competitor/`. The API layer
+(`app/api/`) and the rest of the intelligence engines
+(`app/engines/{prospect,contact,...}/`) are still empty pending their own
+phases (`../PRODUCT_SPEC.md` §9, `../docs/ARCHITECTURE.md` §9) — no
+premature scaffolding ahead of working code underneath it.
 
 **Phase 4 caveat:** Common Crawl's own servers are unreachable from this
 build sandbox (policy-denied at the network layer, not a bug — see
@@ -40,21 +40,31 @@ test before depending on it in production.
   `BacklinkCandidate` rows for Phase 3 to verify. See its module
   docstring for exactly what Common Crawl's public CDX API can and can't
   answer.
+- `app/engines/competitor/` — competitor relationship tracking and link
+  gap computation. No `projects` concept exists yet, so a competitor
+  relationship is just "domain A treats domain B as a competitor" keyed
+  directly on `domains`. `compute_link_gap()` is a pure query over
+  existing `backlinks` rows — "crawling a competitor" is just Phase 3/4
+  discovery/verification run with the competitor's domain as the
+  verification target; no new crawl mechanism here. See
+  `PRODUCT_SPEC.md` §4.3/§13-14.
 - `app/db/models.py` — the crawl-layer schema (domains, crawl_jobs,
-  crawl_requests, crawl_errors, pages, page_links) plus the backlink
-  engine schema (backlink_candidates, backlink_observations, backlinks).
-  See `../docs/DATABASE.md`.
+  crawl_requests, crawl_errors, pages, page_links), the backlink engine
+  schema (backlink_candidates, backlink_observations, backlinks), and the
+  competitor/link-gap schema (competitor_relationships,
+  link_gap_opportunities). See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 62 tests, all real except the Common Crawl HTTP layer
+- `app/tests/` — 64 tests, all real except the Common Crawl HTTP layer
   (see the Phase 4 caveat above): unit tests for normalization/
   fingerprinting/JS-detection/extraction/classification/CDX-parsing
   against local HTML fixtures (`app/tests/fixtures/html/`), and
-  integration tests that run the actual crawler and backlink
-  verification pipeline against a local fixture HTTP server
-  (`app/tests/fixtures/server.py`) and a real Postgres test database —
-  no mocked HTTP, no mocked DB, anywhere except the Common Crawl
-  connector's own external calls.
+  integration tests that run the actual crawler, backlink verification,
+  and competitor/link-gap pipelines against a local fixture HTTP server
+  (`app/tests/fixtures/server.py`, which can bind multiple loopback
+  addresses to simulate genuinely distinct source domains) and a real
+  Postgres test database — no mocked HTTP, no mocked DB, anywhere except
+  the Common Crawl connector's own external calls.
 
 ## Running it
 
@@ -124,3 +134,13 @@ asyncio.run(run_crawl("https://example.com", max_pages=10))
   Layer 2, not built yet. Run a live smoke test against the real Common
   Crawl service before depending on this in production — see
   `../docs/ARCHITECTURE.md` risk #14.
+- If you build a Crawlee crawler directly instead of going through
+  `build_http_crawler`/`build_playwright_crawler`, give it its own
+  uniquely-named `RequestQueue` — see `../docs/ARCHITECTURE.md` risk
+  #15 for why a fresh `MemoryStorageClient()` alone isn't sufficient.
+- Link-gap opportunities are keyed on `competitor_overlap_count` and a
+  simple deterministic confidence tier (1→LOW, 2→MEDIUM, 3+→HIGH) — this
+  is not the full weighted Opportunity Score from `PRODUCT_SPEC.md` §4.5
+  (relevance/authority/traffic/editorial-quality/etc.), which is Phase
+  11. Don't present these tiers to a user as if they were the final
+  score.

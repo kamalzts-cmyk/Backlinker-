@@ -206,7 +206,7 @@ phase. "Frontend renders" is never sufficient on its own.
 | 2 ✅ | Full page/link extraction (metadata, schema, contacts, entities) | **Done** for the deterministic subset: schema.org (JSON-LD), OpenGraph, Twitter Cards, images+alt, PDF links, social profile links, embeds, and candidate contact emails/phones from page text — all verified against a real crawl (pypi.org) with rows inspected in Postgres, plus 15 new tests (6 integration, real HTTP + real DB). AI-assisted entity extraction (Organization/Person/Product/Service/Location per `PRODUCT_SPEC.md` §4.1) is deliberately deferred to Phase 13 (AI layer) rather than faked here — see `backend/README.md`. |
 | 3 ✅ | Backlink verification pipeline | **Done.** `BacklinkCandidate` → direct crawl (reuses the Phase 1/2 crawler) → `BacklinkObservation` (`VERIFIED`/`REJECTED` with reason) → derived `backlinks` current-state row with first/last-seen. Verified against a real live backlink (pypi.org homepage → `/help/`, correct anchor/rel/nav-classification) plus 9 tests covering VERIFIED, nofollow/sponsored detection, target-not-found rejection, and source-unreachable rejection — all against a real fixture server and real Postgres. See `backend/app/engines/backlink/`. |
 | 4 ✅ | Common Crawl connector | **Done, with a caveat.** CDX index query + WARC-record Range-fetch (reusing the Phase 2 link extractor on the fetched HTML) produces real `BacklinkCandidate` rows that flow straight into Phase 3 verification — proven end-to-end against a real Postgres database and a real live verification pass. The one piece not independently proven is the raw HTTP calls to Common Crawl's own servers: `index.commoncrawl.org`/`data.commoncrawl.org` are policy-denied by *this build sandbox's* egress proxy (confirmed via the proxy's diagnostic log — a real, persistent policy denial, not a flake), so those two endpoints are tested against fixtures shaped exactly like their documented real response formats (CDX JSON, gzip WARC records) rather than the live service. Needs one live smoke test in an environment with normal internet access before fully trusting it in production — see risk #14. |
-| 5 | Competitor engine | Two real competitor domains crawled; shared/exclusive backlink sets computed correctly |
+| 5 ✅ | Competitor engine | **Done.** `CompetitorRelationship` (domain-keyed, no `projects` table needed yet) + `compute_link_gap()`, a pure query over existing `backlinks` rows — "crawling a competitor" is just Phase 3/4 discovery/verification run with the competitor's domain as the target, no new crawl mechanism needed. Proven with a fully real multi-domain scenario (distinct loopback addresses as genuinely separate source domains, real crawls, real Postgres), confirming correct overlap counting/tiering and correct exclusion of domains that already link to the primary. Surfaced and fixed a real Crawlee bug in the process — see risk #15. |
 | 6 | Link gap engine + API/UI | `/link-gaps` returns real, evidenced opportunities for a test project |
 | 7 | Prospect discovery | Independently discovered prospects (not just competitor-derived) with topical scores |
 | 8 | Contact intelligence | All contact-relevant page types crawled; full extracted contact list (not capped) with confidence states |
@@ -331,3 +331,23 @@ phase. "Frontend renders" is never sufficient on its own.
     not assume sandbox test-passing alone proves the live integration
     works, the way it was independently proven for Phases 1-3 against
     pypi.org.
+15. **(Confirmed in Phase 5 build) A fresh `MemoryStorageClient()`
+    instance per crawl run is not enough to prevent state leaking
+    across separate crawler runs in the same process.** Crawlee resolves
+    a request queue by *name* against a process-wide registry; two
+    `BeautifulSoupCrawler`/`PlaywrightCrawler` instances that both rely
+    on the implicit "default" queue name can pick up each other's
+    pending/discovered requests even with distinct storage client
+    objects. This surfaced concretely as: verifying two
+    `BacklinkCandidate`s that share the same `source_url` (e.g. checking
+    whether one page links to two different competitors) caused the
+    second verification's crawl to also attempt fetching the first
+    page's *external* links -- links that `enqueue_links(strategy=
+    "same-domain")` had correctly filtered out of the first run, but
+    which apparently still ended up in the shared "default"-named queue.
+    Fixed by giving every crawl run (`app/crawler/http_crawler.py` and
+    `playwright_crawler.py`) its own uniquely-named `RequestQueue.open(
+    name=f"...-{uuid4()}", storage_client=...)` instead of relying on
+    the crawler's implicit default queue. Any future code that builds a
+    Crawlee crawler directly (bypassing these two factories) needs the
+    same treatment.
