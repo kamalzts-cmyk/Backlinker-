@@ -119,6 +119,26 @@ class GuestPostOpportunityOut(BaseModel):
     computed_at: datetime
 
 
+class ScoreComponentOut(BaseModel):
+    name: str
+    value: int | None
+    weight: int
+    confidence: str
+    detail: str
+
+
+class OpportunityScoreOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    domain_id: uuid.UUID
+    reference_domain_id: uuid.UUID | None
+    composite_score: int | None
+    components: list[ScoreComponentOut]
+    evidence: list[str]
+    computed_at: datetime
+
+
 class LinkGapOpportunityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

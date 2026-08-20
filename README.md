@@ -26,7 +26,7 @@ default provider) · Docker.
 
 ## Status
 
-**Phases 0-6 and 8-10 are done** (Phase 7 is intentionally skipped —
+**Phases 0-6 and 8-11 are done** (Phase 7 is intentionally skipped —
 see below). What exists and is tested, end to end, against real
 infrastructure:
 
@@ -61,7 +61,13 @@ infrastructure:
   authors have already been observed on the domain — labeled a proxy
   signal, not confirmed guest authorship.
 
-100 tests pass, almost all against real infrastructure (a real fixture
+- Opportunity scoring: a composite score built only from components this
+  project actually measured (indexability, content depth,
+  contactability, link probability, crude keyword-overlap topical
+  relevance), each one labeled `measured` or `unavailable` — organic
+  traffic is always `unavailable` rather than a guessed number.
+
+105 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
 against real public sites/domains). Two honest caveats, not glossed

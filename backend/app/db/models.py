@@ -631,3 +631,42 @@ class GuestPostOpportunity(TimestampMixin, Base):
     guest_post_probability: Mapped[int] = mapped_column(Integer)
     evidence: Mapped[list] = mapped_column(JSON)  # list[str] -- see docstring above
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Phase 11: opportunity scoring (see PRODUCT_SPEC.md §8/§11-12/§54-55).
+#
+# Deliberately NOT the full named component set from PRODUCT_SPEC.md §8
+# (Relevance/Authority/Traffic/Editorial Quality/Link Probability/
+# Topical Fit/Contactability/Indexability) -- several of those need data
+# we don't have (organic traffic has no integrated source; "authority"
+# in the DR/DA sense is explicitly rejected by PRODUCT_SPEC.md §8 as the
+# wrong metric anyway). Instead: a smaller set of components computed
+# only from data this project actually collected, each with a
+# `confidence` of "measured" or "unavailable" -- never a fabricated
+# number standing in for a missing signal. See
+# app/engines/scoring/opportunity.py for the exact formula.
+# ---------------------------------------------------------------------------
+
+
+class OpportunityScore(TimestampMixin, Base):
+    __tablename__ = "opportunity_scores"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    # The site this opportunity is being evaluated *for* -- topical
+    # relevance and link-gap-derived link probability are meaningless
+    # without one. Nullable: a domain can still get a partial score
+    # (content depth, contactability, indexability, spam risk) on its
+    # own.
+    reference_domain_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("domains.id"), nullable=True, index=True
+    )
+    composite_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    components: Mapped[list] = mapped_column(JSON)  # list[{name, value, weight, confidence, detail}]
+    evidence: Mapped[list] = mapped_column(JSON)  # list[str]
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("domain_id", "reference_domain_id", name="uq_opportunity_score_pair"),
+    )

@@ -162,3 +162,19 @@ async def test_guest_posts_endpoints_reflect_a_real_opportunity():
     detail = client.get(f"/guest-posts/{rows[0]['id']}")
     assert detail.status_code == 200
     assert detail.json()["guest_post_probability"] == rows[0]["guest_post_probability"]
+
+
+@pytest.mark.asyncio
+async def test_opportunity_score_endpoint():
+    with FixtureServer() as base_url:
+        contacts = await discover_contacts_for_domain(f"{base_url}/contact.html", max_pages=1)
+    domain_id = str(contacts[0].domain_id)
+
+    response = client.post("/opportunities/score", params={"domain_id": domain_id})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["composite_score"] is not None
+    by_name = {c["name"]: c for c in body["components"]}
+    assert by_name["organic_traffic"]["value"] is None
+    assert by_name["organic_traffic"]["confidence"] == "unavailable"
+    assert by_name["contactability"]["confidence"] == "measured"

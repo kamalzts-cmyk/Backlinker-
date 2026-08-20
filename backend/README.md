@@ -1,12 +1,13 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-10 (real crawler, full page/link
+FastAPI project. **Phases 1-6 and 8-11 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
 competitor/link-gap engine, a real API layer, contact intelligence,
-email verification, and guest-post intelligence) are implemented and
-tested** — see `app/crawler/`, `app/engines/backlink/`,
-`app/engines/competitor/`, `app/engines/contact/`,
-`app/engines/guest_post/`, and `app/api/`. Run it with `uvicorn
+email verification, guest-post intelligence, and opportunity scoring)
+are implemented and tested** — see `app/crawler/`,
+`app/engines/backlink/`, `app/engines/competitor/`,
+`app/engines/contact/`, `app/engines/guest_post/`,
+`app/engines/scoring/`, and `app/api/`. Run it with `uvicorn
 app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
 now — it needs a search-backend decision (paid API vs. self-hosted vs.
 scraping) that hasn't been made; see the note in `../docs/ARCHITECTURE.md`
@@ -75,6 +76,11 @@ test before depending on it in production.
   visible page text, added in this phase after noticing `../docs/DATABASE.md`
   had documented it for full-text search but Phase 2 never actually added
   the column.
+- `app/engines/scoring/opportunity.py` — opportunity scoring. Smaller,
+  honestly-scoped component set than `PRODUCT_SPEC.md` §8's named list
+  (see `OpportunityScore`'s model docstring) — every component is either
+  `measured` from real data or explicitly `unavailable`, never guessed.
+  Organic traffic is *always* unavailable (no data source integrated).
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
@@ -89,7 +95,7 @@ test before depending on it in production.
   contact_sources). See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 100 tests, all real except the Common Crawl HTTP layer
+- `app/tests/` — 105 tests, all real except the Common Crawl HTTP layer
   (see the Phase 4 caveat above): unit tests for normalization/
   fingerprinting/JS-detection/extraction/classification/CDX-parsing
   against local HTML fixtures (`app/tests/fixtures/html/`), and
