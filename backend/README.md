@@ -1,14 +1,18 @@
 # backend
 
-FastAPI project. **Phases 1-6 (real crawler, full page/link extraction,
-backlink verification, Common Crawl connector, competitor/link-gap
-engine, and a real API layer) are implemented and tested** — see
-`app/crawler/`, `app/engines/backlink/`, `app/engines/competitor/`, and
-`app/api/`. Run it with `uvicorn app.main:app --reload`. The rest of the
-intelligence engines (`app/engines/{prospect,contact,...}/`) and the
-frontend are still empty pending their own phases (`../PRODUCT_SPEC.md`
-§9, `../docs/ARCHITECTURE.md` §9) — no premature scaffolding ahead of
-working code underneath it.
+FastAPI project. **Phases 1-6 and Phase 8 (real crawler, full page/link
+extraction, backlink verification, Common Crawl connector,
+competitor/link-gap engine, a real API layer, and contact intelligence)
+are implemented and tested** — see `app/crawler/`,
+`app/engines/backlink/`, `app/engines/competitor/`,
+`app/engines/contact/`, and `app/api/`. Run it with `uvicorn app.main:app
+--reload`. Phase 7 (search-pattern prospect discovery) is skipped for
+now — it needs a search-backend decision (paid API vs. self-hosted vs.
+scraping) that hasn't been made; see the note in `../docs/ARCHITECTURE.md`
+risk #3. The rest of the intelligence engines and the frontend are still
+empty pending their own phases (`../PRODUCT_SPEC.md` §9,
+`../docs/ARCHITECTURE.md` §9) — no premature scaffolding ahead of working
+code underneath it.
 
 **Phase 4 caveat:** Common Crawl's own servers are unreachable from this
 build sandbox (policy-denied at the network layer, not a bug — see
@@ -49,6 +53,12 @@ test before depending on it in production.
   discovery/verification run with the competitor's domain as the
   verification target; no new crawl mechanism here. See
   `PRODUCT_SPEC.md` §4.3/§13-14.
+- `app/engines/contact/` — contact discovery. Reuses the Phase 1/2
+  crawler; classifies contact-relevant pages by URL path and turns
+  page-level `contact_emails`/`contact_phones`/`schema_org` into `Contact`
+  rows with full provenance (`ContactSource`). Never guesses a name/email
+  pairing beyond schema.org `Person` markup or an unambiguous
+  single-person page. See `PRODUCT_SPEC.md` §4.6.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
@@ -57,12 +67,13 @@ test before depending on it in production.
   shape (`app/api/errors.py`).
 - `app/db/models.py` — the crawl-layer schema (domains, crawl_jobs,
   crawl_requests, crawl_errors, pages, page_links), the backlink engine
-  schema (backlink_candidates, backlink_observations, backlinks), and the
+  schema (backlink_candidates, backlink_observations, backlinks), the
   competitor/link-gap schema (competitor_relationships,
-  link_gap_opportunities). See `../docs/DATABASE.md`.
+  link_gap_opportunities), and the contact schema (contacts,
+  contact_sources). See `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 69 tests, all real except the Common Crawl HTTP layer
+- `app/tests/` — 80 tests, all real except the Common Crawl HTTP layer
   (see the Phase 4 caveat above): unit tests for normalization/
   fingerprinting/JS-detection/extraction/classification/CDX-parsing
   against local HTML fixtures (`app/tests/fixtures/html/`), and
@@ -145,10 +156,21 @@ asyncio.run(run_crawl("https://example.com", max_pages=10))
   `build_http_crawler`/`build_playwright_crawler`, give it its own
   uniquely-named `RequestQueue` — see `../docs/ARCHITECTURE.md` risk
   #15 for why a fresh `MemoryStorageClient()` alone isn't sufficient.
-- No `/opportunities`, `/prospects`, `/contacts`, etc. yet — those wait
-  on their own engines (Phase 7+). `/link-gaps` is the only "opportunity"
-  view so far, and it's the raw competitor-overlap signal, not a scored
-  opportunity.
+- No `/opportunities`, `/prospects`, `/contacts`, etc. API endpoints yet
+  — `app/engines/contact/` exists and is tested but isn't wired into
+  `app/api/` yet. `/link-gaps` is the only "opportunity" view so far, and
+  it's the raw competitor-overlap signal, not a scored opportunity.
+- Contact name/role pairing only handles two safe, unambiguous cases
+  (schema.org `Person`, single-person pages) by design — a page with
+  multiple people and no structured markup yields correctly-unattributed
+  email/phone contacts rather than a guessed pairing. Real name
+  extraction for multi-person pages (e.g. via NLP or an AI pass) is
+  future work, not something to bolt on as a fragile heuristic.
+- Email *verification* (syntax/DNS/MX/catch-all/SMTP -- Phase 9) doesn't
+  exist yet. Every contact's `verification_status` here is only ever
+  `DIRECTLY_PUBLISHED`, `ROLE_ADDRESS`, or `UNKNOWN` -- `VERIFIED`/
+  `CATCH_ALL`/`INVALID`/`LIKELY`/`PATTERN_INFERRED` are modeled but
+  unused until then.
 - Link-gap opportunities are keyed on `competitor_overlap_count` and a
   simple deterministic confidence tier (1→LOW, 2→MEDIUM, 3+→HIGH) — this
   is not the full weighted Opportunity Score from `PRODUCT_SPEC.md` §4.5

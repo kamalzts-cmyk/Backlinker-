@@ -4,7 +4,7 @@ An evidence-backed SEO backlink intelligence, link prospecting, contact
 intelligence, and outreach platform — built on our own crawl and
 discovery infrastructure instead of a paid backlink index.
 
-This repository is currently at **Phase 0: architecture**. Start here:
+Read the architecture first, then the code — start here:
 
 1. [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md) — what we're building, why, and
    the non-negotiable engineering principles (no fake data, provenance on
@@ -26,36 +26,48 @@ default provider) · Docker.
 
 ## Status
 
-**Phase 0 (architecture) through Phase 6 (link gap engine + API) are
-done.** A real FastAPI layer now sits on top of everything below (run
-with `uvicorn app.main:app --reload` from `backend/`). A working, tested, two-tier crawler (Crawlee HTTP-first with
-a Playwright fallback) that extracts page metadata, schema.org/
-OpenGraph/Twitter Cards, images, PDF/social links, embeds, and candidate
-contact info; a direct backlink verification pipeline (crawl a claimed
-source page for real, confirm the link is actually there, record anchor/
-rel/context with first/last-seen history); a Common Crawl connector that
-turns a seed domain's Common-Crawl-captured pages into verification
-candidates; and a competitor/link-gap engine (which domains link to a
-tracked competitor but not yet to you, with a transparent overlap-based
-confidence tier) — see [`backend/README.md`](./backend/README.md) for
-what's implemented, how to run it, and known follow-ups (including one
-honest caveat: Common Crawl's own servers aren't reachable from this
-particular build sandbox, so that one connector is tested against
-realistic fixtures rather than the live service — needs a live smoke
-test before production use); and a domain-centric FastAPI layer
-(`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`) proven
-with `TestClient` driving the real route handlers, real engines, and a
-real Postgres test database. 69 tests pass, nearly all against real
-infrastructure (a real fixture HTTP server that can simulate multiple
-distinct domains, a real Postgres database, real live crawls and
-backlink verification against a real public site, with rows inspected
-directly in Postgres). Building this also surfaced and fixed a genuine
+**Phases 0-6 and Phase 8 are done** (Phase 7 is intentionally skipped —
+see below). What exists and is tested, end to end, against real
+infrastructure:
+
+- A two-tier crawler (Crawlee HTTP-first, Playwright fallback) extracting
+  page metadata, schema.org/OpenGraph/Twitter Cards, images, PDF/social
+  links, embeds, and candidate contact info.
+- Direct backlink verification: crawl a claimed source page for real,
+  confirm the link is actually there, record anchor/rel/context with
+  first/last-seen history.
+- A Common Crawl connector turning a seed domain's captured pages into
+  verification candidates.
+- A competitor/link-gap engine: which domains link to a tracked
+  competitor but not yet to you, with a transparent overlap-based
+  confidence tier.
+- Contact intelligence: crawl a domain's about/contact/team/author/
+  guest-post pages and turn what they plainly contain into full,
+  uncapped contact records with provenance — never guessing a name/email
+  pairing beyond schema.org markup or an unambiguous single-person page.
+- A domain-centric FastAPI layer (`/domains`, `/crawl`, `/backlinks`,
+  `/competitors`, `/link-gaps`) — no `projects`/auth layer exists yet.
+
+80 tests pass, almost all against real infrastructure (a real fixture
+HTTP server that can simulate multiple distinct domains, a real Postgres
+database, real live crawls/verification/contact-discovery against real
+public sites). Two honest caveats, not glossed over: Common Crawl's own
+servers aren't reachable from this particular build sandbox, so that one
+connector is tested against realistic fixtures rather than the live
+service (needs a live smoke test before production use); and **Phase 7
+(search-pattern prospect discovery) is skipped** because it needs a
+search-backend decision — paid API, self-hosted SearX, or scraping —
+that hasn't been made. Building this also surfaced and fixed a genuine
 Crawlee bug (cross-run request-queue state leaking between separate
 crawl jobs in the same process — see `docs/ARCHITECTURE.md` risk #15).
-Everything past this (search-pattern discovery, prospect/contact
-engines, frontend) is still empty pending its own phase, per the build
-order in `PRODUCT_SPEC.md` §9 — no premature scaffolding
-ahead of working code underneath it.
+
+See [`backend/README.md`](./backend/README.md) for exactly what's
+implemented, how to run it, and the full list of known follow-ups.
+Everything past this (prospect discovery, email verification, guest-post
+intelligence, scoring, AI layer, outreach, campaigns, monitoring,
+reports, GEO intelligence, frontend) is still empty pending its own
+phase, per the build order in `PRODUCT_SPEC.md` §9 — no premature
+scaffolding ahead of working code underneath it.
 
 ```
 docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama

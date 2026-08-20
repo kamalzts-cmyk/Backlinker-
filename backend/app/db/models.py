@@ -451,3 +451,96 @@ class LinkGapOpportunity(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("primary_domain_id", "candidate_domain_id", name="uq_link_gap_pair"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 8: contact intelligence (see docs/DATABASE.md §Contact
+# intelligence, PRODUCT_SPEC.md §4.6).
+#
+# Built on top of the Phase 2 page-level extraction (Page.contact_emails/
+# contact_phones/schema_org) -- discovery here means crawling a domain
+# (reusing Phase 1/2's run_crawl), classifying which of its pages are
+# contact-relevant (about/contact/team/author/guest-post/press), and
+# turning what those pages plainly contain into Contact rows with full
+# provenance. Never a capped top-N list, and never a guessed name/role
+# pairing beyond what schema.org markup or an unambiguous single-person
+# page gives for free -- see app/engines/contact/discover.py.
+# ---------------------------------------------------------------------------
+
+
+class ContactVerificationStatus(str, enum.Enum):
+    """PRODUCT_SPEC.md §4.6/§12-13's mandatory enum -- never collapse
+    these into a single "verified" bucket. Only DIRECTLY_PUBLISHED and
+    ROLE_ADDRESS are set by Phase 8 itself (a plainly-visible email is a
+    deterministic fact); VERIFIED/CATCH_ALL/INVALID require the Phase 9
+    DNS/MX/SMTP verification layers, and PATTERN_INFERRED requires the
+    pattern-guessing this project deliberately does not do without
+    evidence.
+    """
+
+    DIRECTLY_PUBLISHED = "directly_published"
+    VERIFIED = "verified"
+    LIKELY = "likely"
+    CATCH_ALL = "catch_all"
+    ROLE_ADDRESS = "role_address"
+    PATTERN_INFERRED = "pattern_inferred"
+    UNKNOWN = "unknown"
+    INVALID = "invalid"
+
+
+class ContactPageType(str, enum.Enum):
+    HOME = "home"
+    ABOUT = "about"
+    CONTACT = "contact"
+    TEAM = "team"
+    AUTHOR = "author"
+    GUEST_POST = "guest_post"
+    PRESS = "press"
+    OTHER = "other"
+
+
+class Contact(TimestampMixin, Base):
+    """A person or role-address discovered on a domain. Identity is
+    (domain_id, email) when an email exists, else (domain_id, phone) --
+    see app/engines/contact/repository.py's get_or_create_contact.
+    """
+
+    __tablename__ = "contacts"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    job_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verification_status: Mapped[ContactVerificationStatus] = mapped_column(
+        Enum(ContactVerificationStatus, name="contact_verification_status"),
+        default=ContactVerificationStatus.UNKNOWN,
+    )
+    confidence_score: Mapped[int] = mapped_column(Integer, default=0)
+
+    sources: Mapped[list["ContactSource"]] = relationship(back_populates="contact")
+
+    __table_args__ = (
+        UniqueConstraint("domain_id", "email", name="uq_contacts_domain_email"),
+        UniqueConstraint("domain_id", "phone", name="uq_contacts_domain_phone"),
+    )
+
+
+class ContactSource(TimestampMixin, Base):
+    """Provenance detail per contact -- a contact can have multiple
+    sources (e.g. found on both the team page and an author bio).
+    """
+
+    __tablename__ = "contact_sources"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    contact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contacts.id"), index=True)
+    source_url: Mapped[str] = mapped_column(String(2048))
+    source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    page_type: Mapped[ContactPageType] = mapped_column(Enum(ContactPageType, name="contact_page_type"))
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    contact: Mapped[Contact] = relationship(back_populates="sources")
+
+    __table_args__ = (UniqueConstraint("contact_id", "source_url", name="uq_contact_source"),)
