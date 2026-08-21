@@ -4,9 +4,13 @@ backlink/competitor setup below use the real fixture HTTP server, not
 mocks -- same discipline as every other integration test in this suite.
 """
 
+import httpx
 import pytest
+import respx
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
+from app.crawler.repository import get_or_create_domain
 from app.db.base import session_scope
 from app.db.models import BacklinkSourceType
 from app.engines.backlink.repository import create_candidate
@@ -17,6 +21,8 @@ from app.main import app
 from app.tests.fixtures.server import FixtureServer
 
 client = TestClient(app)
+
+_ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 
 
 def test_register_and_get_domain():
@@ -433,3 +439,220 @@ def test_geo_observations_endpoint_rejects_cited_without_source_url():
     )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def _anthropic_message_response(content: list[dict]) -> dict:
+    return {
+        "id": "msg_apitest",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5",
+        "content": content,
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+
+
+@respx.mock
+def test_geo_check_endpoint_records_a_real_citation_from_mocked_anthropic(monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    with session_scope() as session:
+        domain = get_or_create_domain(session, raw_host="claude-cited-example.com")
+        domain_id = str(domain.id)
+
+    respx.post(_ANTHROPIC_MESSAGES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json=_anthropic_message_response(
+                [
+                    {
+                        "type": "web_search_tool_result",
+                        "tool_use_id": "srvtoolu_1",
+                        "content": [
+                            {
+                                "type": "web_search_result",
+                                "url": "https://claude-cited-example.com/guide",
+                                "title": "Guide",
+                            }
+                        ],
+                    },
+                    {"type": "text", "text": "Cited from Claude Cited Example."},
+                ]
+            ),
+        )
+    )
+
+    response = client.post(
+        "/geo/check", json={"query": "who writes the best guides", "target_domain_id": domain_id}
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["observed_result"] == "cited"
+    assert body["source_url"] == "https://claude-cited-example.com/guide"
+
+
+@respx.mock
+def test_geo_check_endpoint_502s_on_upstream_failure(monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    with session_scope() as session:
+        domain = get_or_create_domain(session, raw_host="claude-fail-example.com")
+        domain_id = str(domain.id)
+
+    respx.post(_ANTHROPIC_MESSAGES_URL).mock(return_value=httpx.Response(529, json={"error": {}}))
+
+    response = client.post(
+        "/geo/check", json={"query": "anything", "target_domain_id": domain_id}
+    )
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_error"
+
+
+@respx.mock
+def test_backlinks_discover_search_endpoint_creates_real_candidates_from_mocked_anthropic(monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    with session_scope() as session:
+        domain = get_or_create_domain(session, raw_host="discover-search-example.com")
+        domain_id = str(domain.id)
+
+    respx.post(_ANTHROPIC_MESSAGES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json=_anthropic_message_response(
+                [
+                    {
+                        "type": "web_search_tool_result",
+                        "tool_use_id": "srvtoolu_1",
+                        "content": [
+                            {
+                                "type": "web_search_result",
+                                "url": "https://publisher.example/mentions-brand",
+                                "title": "Mentions",
+                            }
+                        ],
+                    },
+                    {"type": "text", "text": "ok"},
+                ]
+            ),
+        )
+    )
+
+    response = client.post(
+        "/backlinks/discover-search",
+        json={
+            "brand_query": "Discover Search Example",
+            "target_domain_id": domain_id,
+            "target_url": "https://discover-search-example.com/guide",
+        },
+    )
+    assert response.status_code == 201
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["source_url"] == "https://publisher.example/mentions-brand"
+    assert rows[0]["source_type"] == "search_discovered"
+    assert rows[0]["status"] == "pending"
+
+
+def test_backlinks_discover_search_404_for_unknown_domain():
+    response = client.post(
+        "/backlinks/discover-search",
+        json={
+            "brand_query": "x",
+            "target_domain_id": "00000000-0000-0000-0000-000000000000",
+            "target_url": "https://example.com/guide",
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_backlink_candidates_list_and_verify_endpoints_reflect_a_real_verification():
+    with FixtureServer() as base_url:
+        with session_scope() as session:
+            target_domain = get_or_create_domain(session, raw_host="example.com")
+            candidate = create_candidate(
+                session,
+                source_url=f"{base_url}/index.html",
+                target_url="https://example.com/follow-target",
+                target_domain_id=target_domain.id,
+                source_type=BacklinkSourceType.SEARCH_DISCOVERED,
+                discovery_method='search_pattern:"example"',
+            )
+            candidate_id, target_domain_id = candidate.id, target_domain.id
+
+        list_response = client.get(
+            "/backlinks/candidates", params={"target_domain_id": str(target_domain_id)}
+        )
+        assert list_response.status_code == 200
+        rows = list_response.json()
+        assert len(rows) == 1
+        assert rows[0]["status"] == "pending"
+        assert rows[0]["source_type"] == "search_discovered"
+
+        verify_response = client.post(f"/backlinks/candidates/{candidate_id}/verify")
+        assert verify_response.status_code == 200
+        assert verify_response.json()["status"] == "verified"
+
+    pending_response = client.get(
+        "/backlinks/candidates",
+        params={"target_domain_id": str(target_domain_id), "status": "pending"},
+    )
+    assert pending_response.json() == []
+
+
+def test_verify_candidate_404_for_unknown_candidate():
+    response = client.post(
+        "/backlinks/candidates/00000000-0000-0000-0000-000000000000/verify"
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+@respx.mock
+def test_prospects_discover_and_list_endpoints_reflect_real_data(monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+
+    respx.post(_ANTHROPIC_MESSAGES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json=_anthropic_message_response(
+                [
+                    {
+                        "type": "web_search_tool_result",
+                        "tool_use_id": "srvtoolu_1",
+                        "content": [
+                            {
+                                "type": "web_search_result",
+                                "url": "https://widget-prospect.example/best-tools",
+                                "title": "Best widget tools",
+                            }
+                        ],
+                    },
+                    {"type": "text", "text": "Widget Prospect covers widget tools."},
+                ]
+            ),
+        )
+    )
+
+    discover_response = client.post("/prospects/discover", json={"topic": "widget"})
+    assert discover_response.status_code == 201
+    rows = discover_response.json()
+    assert len(rows) >= 1
+    assert any(r["domain_host"] == "widget-prospect.example" for r in rows)
+    assert all(r["topic_query"] == "widget" for r in rows)
+
+    list_response = client.get("/prospects", params={"topic": "widget"})
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert len(listed) == len(rows)
+
+
+@respx.mock
+def test_prospects_discover_502s_on_upstream_failure(monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    respx.post(_ANTHROPIC_MESSAGES_URL).mock(return_value=httpx.Response(529, json={"error": {}}))
+
+    response = client.post("/prospects/discover", json={"topic": "anything"})
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_error"

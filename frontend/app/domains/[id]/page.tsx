@@ -2,13 +2,16 @@ import { notFound } from "next/navigation";
 
 import {
   addCompetitorAction,
+  checkGeoCitationAction,
   computeOpportunityScoreAction,
   createCampaignAction,
   discoverContactsAction,
   discoverGuestPostAction,
+  discoverSearchAction,
   generateOutreachStrategyAction,
   recordGeoObservationAction,
   runCrawlAction,
+  verifyCandidateAction,
   verifyEmailAction,
 } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -17,6 +20,7 @@ import { apiGet, apiGetOrNull, apiPost, ApiError } from "@/lib/api";
 import {
   GEO_CITATION_RESULTS,
   type Backlink,
+  type BacklinkCandidate,
   type Campaign,
   type CompetitorRelationship,
   type Contact,
@@ -52,16 +56,25 @@ export default async function DomainDetailPage({
     throw err;
   }
 
-  const [backlinksIn, competitors, linkGaps, contacts, guestPosts, score, geoObservations] =
-    await Promise.all([
-      apiGet<Backlink[]>("/backlinks", { target_domain_id: id }),
-      apiGet<CompetitorRelationship[]>("/competitors", { primary_domain_id: id }),
-      apiGet<LinkGapOpportunity[]>("/link-gaps", { primary_domain_id: id }),
-      apiGet<Contact[]>("/contacts", { domain_id: id }),
-      apiGet<GuestPostOpportunity[]>("/guest-posts", { domain_id: id }),
-      apiPost<OpportunityScore>("/opportunities/score", undefined, { domain_id: id }),
-      apiGet<GEOObservation[]>("/geo/observations", { target_domain_id: id }),
-    ]);
+  const [
+    backlinksIn,
+    competitors,
+    linkGaps,
+    contacts,
+    guestPosts,
+    score,
+    geoObservations,
+    pendingCandidates,
+  ] = await Promise.all([
+    apiGet<Backlink[]>("/backlinks", { target_domain_id: id }),
+    apiGet<CompetitorRelationship[]>("/competitors", { primary_domain_id: id }),
+    apiGet<LinkGapOpportunity[]>("/link-gaps", { primary_domain_id: id }),
+    apiGet<Contact[]>("/contacts", { domain_id: id }),
+    apiGet<GuestPostOpportunity[]>("/guest-posts", { domain_id: id }),
+    apiPost<OpportunityScore>("/opportunities/score", undefined, { domain_id: id }),
+    apiGet<GEOObservation[]>("/geo/observations", { target_domain_id: id }),
+    apiGet<BacklinkCandidate[]>("/backlinks/candidates", { target_domain_id: id, status: "pending" }),
+  ]);
 
   const contactRows = await Promise.all(contacts.map(contactExtras));
   const guestPost = guestPosts[0] ?? null;
@@ -135,6 +148,68 @@ export default async function DomainDetailPage({
                     {b.latest_observation.rel_ugc && <Badge value="ugc" />}
                   </td>
                   <td>{new Date(b.last_seen_at).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Section>
+
+      <Section title="Search-pattern discovery (candidates)">
+        <p className="mb-3 text-sm text-slate-500">
+          Runs the query patterns from PRODUCT_SPEC.md §4.2 Layer 2 (&quot;brand&quot;,
+          &quot;brand&quot; resources, filetype:pdf &quot;brand&quot;, ...) through Claude&apos;s
+          web search tool. Results are candidates only -- verify each one for real before trusting
+          it as a backlink.
+        </p>
+        <form action={discoverSearchAction} className="mb-4 flex flex-wrap items-end gap-2">
+          <input type="hidden" name="domain_id" value={id} />
+          <div>
+            <label className="block text-xs text-slate-500">Brand / topic query</label>
+            <input
+              name="brand_query"
+              required
+              placeholder={domain.normalized_host}
+              className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500">Target URL (what should be linked)</label>
+            <input
+              name="target_url"
+              defaultValue={startUrl}
+              required
+              className="w-64 rounded border border-slate-300 px-3 py-1.5 text-sm"
+            />
+          </div>
+          <SubmitButton pendingLabel="Searching…">Discover via search</SubmitButton>
+        </form>
+
+        {pendingCandidates.length === 0 ? (
+          <EmptyState>No pending candidates.</EmptyState>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Source URL</th>
+                <th>Discovery method</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingCandidates.map((c) => (
+                <tr key={c.id}>
+                  <td className="break-all">{c.source_url}</td>
+                  <td className="text-slate-500">{c.discovery_method ?? "—"}</td>
+                  <td>
+                    <form action={verifyCandidateAction}>
+                      <input type="hidden" name="domain_id" value={id} />
+                      <input type="hidden" name="candidate_id" value={c.id} />
+                      <SubmitButton pendingLabel="Verifying…" variant="secondary">
+                        Verify
+                      </SubmitButton>
+                    </form>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -375,6 +450,23 @@ export default async function DomainDetailPage({
       </Section>
 
       <Section title="AI-search / GEO citations">
+        <form action={checkGeoCitationAction} className="mb-4 flex flex-wrap items-end gap-2">
+          <input type="hidden" name="domain_id" value={id} />
+          <div className="flex-1">
+            <label className="block text-xs text-slate-500">
+              Check automatically via Claude&apos;s web search (requires an Anthropic API key
+              configured for this deployment)
+            </label>
+            <input
+              name="query"
+              required
+              placeholder="Query to check (e.g. best backlink tools)"
+              className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
+            />
+          </div>
+          <SubmitButton pendingLabel="Checking…">Check citation now</SubmitButton>
+        </form>
+
         <form action={recordGeoObservationAction} className="mb-4 grid gap-2 sm:grid-cols-2">
           <input type="hidden" name="domain_id" value={id} />
           <input
@@ -414,9 +506,8 @@ export default async function DomainDetailPage({
 
         {geoObservations.length === 0 ? (
           <EmptyState>
-            No citation checks logged yet. No automated answer-engine integration exists (see
-            docs/ARCHITECTURE.md risk #18) -- log what you see checking a real answer engine
-            yourself.
+            No citation checks logged yet. Use &quot;Check citation now&quot; for an automated
+            check, or log what you saw checking a real answer engine yourself.
           </EmptyState>
         ) : (
           <table>

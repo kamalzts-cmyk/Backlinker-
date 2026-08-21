@@ -18,6 +18,14 @@ dependencies = [
     "dnspython>=2.6",
     "openpyxl>=3.1",
     "reportlab>=4.2",
+    # Pinned <1.0: the 1.x line moves onto a separate `httpx2` transport
+    # that this project's respx-based HTTP mocking (used consistently
+    # across every other provider's tests -- Ollama, Common Crawl) can't
+    # intercept. The wire format this project depends on (the web search
+    # tool's request/response shape) is unchanged between the two SDK
+    # major versions; only client-side ergonomics differ. Revisit when
+    # respx (or an alternative) supports httpx2.
+    "anthropic>=0.100,<1.0",
 ]
 
 [project.optional-dependencies]

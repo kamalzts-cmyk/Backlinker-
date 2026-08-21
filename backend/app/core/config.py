@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
 
+    # AnthropicSearchProvider (app/engines/search/anthropic_provider.py),
+    # the search backend behind Phase 7 (search-pattern discovery) and
+    # Phase 18 (GEO citation checking). None lets the Anthropic SDK
+    # resolve credentials itself (env var, `ant auth login` profile, ...)
+    # -- see that module's docstring. Never hardcode a key here.
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-opus-5"
+
     crawler_user_agent: str = "LinkIntelBot/0.1 (+https://example.invalid/bot)"
     crawler_max_pages_per_job: int = 50
     crawler_respect_robots_txt: bool = True

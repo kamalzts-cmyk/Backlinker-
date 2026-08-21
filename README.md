@@ -26,9 +26,8 @@ default provider) · Docker.
 
 ## Status
 
-**Backend phases 0-6 and 8-18 are done, and the Next.js frontend is now
-a real client of that API** (Phase 7 is intentionally skipped — see
-below). What exists and is tested, end to end, against real
+**All backend phases (0-18) are done, and the Next.js frontend is now
+a real client of that API.** What exists and is tested, end to end, against real
 infrastructure:
 
 - A two-tier crawler (Crawlee HTTP-first, Playwright fallback) extracting
@@ -47,8 +46,15 @@ infrastructure:
   uncapped contact records with provenance — never guessing a name/email
   pairing beyond schema.org markup or an unambiguous single-person page.
 - A domain-centric FastAPI layer (`/domains`, `/crawl`, `/backlinks`,
-  `/competitors`, `/link-gaps`, `/contacts`, `/guest-posts`) — no
-  `projects`/auth layer exists yet.
+  `/competitors`, `/link-gaps`, `/prospects`, `/contacts`, `/guest-posts`,
+  `/geo`) — no `projects`/auth layer exists yet.
+- Search-pattern backlink discovery and independent prospect discovery:
+  both run named query patterns against Claude's own web-search tool
+  (`AnthropicSearchProvider`) — one produces URL-level backlink
+  candidates from a brand query that feed straight into the existing
+  verification pipeline, the other produces domain-level prospects from
+  a bare topic (resource pages, roundups, guest-post blogs, industry
+  publications) with a crude, clearly-labeled keyword-overlap fit score.
 - Email verification: syntax, DNS/MX, and disposable-domain checks,
   genuinely proven against live DNS (no mocking needed — unlike HTTPS,
   DNS resolution isn't restricted here). SMTP-level mailbox/catch-all
@@ -105,9 +111,10 @@ infrastructure:
   human can log what they saw checking a real answer engine themselves
   (no API needed), and the automated path's citation matching is
   deterministic (does a returned URL resolve to the domain being
-  checked?) — but no concrete answer-engine integration ships, since
-  unlike Ollama there's no free/self-hostable one to build and verify a
-  real integration against; a paid API's wire format isn't guessed at.
+  checked?) — now backed by a real, concrete `AnthropicSearchProvider`
+  (the same one powering search-pattern/prospect discovery above),
+  which resolves that gap by using Claude's own web-search tool instead
+  of guessing at a paid third-party API's wire format.
 - A Next.js frontend (App Router, Server Components + Server Actions,
   no client-side API calls, so the backend needs no CORS config) covers
   the full flow through the browser: register a domain, run a crawl,
@@ -118,32 +125,33 @@ infrastructure:
   against a live backend via Playwright, not just a build check — see
   `frontend/README.md`.
 
-154 tests pass, almost all against real infrastructure (a real fixture
+175 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
-against real public sites/domains). Four honest caveats, not glossed
+against real public sites/domains). Three honest caveats, not glossed
 over: Common Crawl's own servers and Ollama itself aren't reachable
 from this particular build sandbox, so those two integrations are tested
 against realistic fixtures / mocked HTTP shaped exactly like the real
 documented APIs rather than the live services (both need a live smoke
 test before production use — see `docs/ARCHITECTURE.md` risks #14 and
-#17); no AI-search/GEO citation provider ships at all, since unlike
-Ollama there's no free/self-hostable answer-engine API to build and
-verify a real integration against without guessing at a paid API's wire
-format (`docs/ARCHITECTURE.md` risk #18); and **Phase 7 (search-pattern
-prospect discovery) is skipped** because it needs a search-backend
-decision — paid API, self-hosted SearX, or scraping — that hasn't been
-made. Building this also surfaced and fixed a genuine Crawlee bug
+#17); and `AnthropicSearchProvider` (search-pattern discovery, prospect
+discovery, and automated GEO citation checking) is likewise tested
+against the real Anthropic SDK's HTTP calls intercepted by `respx`,
+proven correct against a request/response shape independently
+confirmed via a live fetch of the current API reference — not against a
+live API key, since this sandbox can't reach the internet directly
+either. Run a live smoke test with a real `ANTHROPIC_API_KEY` before
+depending on it in production — see `docs/ARCHITECTURE.md` risk #19.
+Building this also surfaced and fixed a genuine Crawlee bug
 (cross-run request-queue state leaking between separate crawl jobs in
 the same process — see `docs/ARCHITECTURE.md` risk #15).
 
 See [`backend/README.md`](./backend/README.md) and
 [`frontend/README.md`](./frontend/README.md) for exactly what's
 implemented, how to run each half, and the full list of known
-follow-ups. Every phase in the build order in `PRODUCT_SPEC.md` §9 that
-doesn't need an outside decision (Phase 7's search backend, Phase 18's
-answer-engine provider) is now built — no premature scaffolding ahead
-of working code underneath it.
+follow-ups. Every phase in the build order in `PRODUCT_SPEC.md` §9 is
+now built — no premature scaffolding ahead of working code underneath
+it.
 
 ```
 docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama

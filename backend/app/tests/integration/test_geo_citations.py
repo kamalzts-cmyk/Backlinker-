@@ -15,7 +15,7 @@ from app.crawler.repository import get_or_create_domain
 from app.db.base import session_scope
 from app.db.models import GEOCitationResult, GEOObservation
 from app.engines.geo.citations import check_citation, record_manual_observation
-from app.engines.geo.provider import AISearchResult
+from app.engines.search.provider import AISearchResult
 from app.tests.fixtures.fake_ai_search_provider import FakeAISearchProvider
 
 

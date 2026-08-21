@@ -1,26 +1,23 @@
 # backend
 
-FastAPI project. **Phases 1-6 and 8-18 (real crawler, full page/link
+FastAPI project. **Phases 1-18 (real crawler, full page/link
 extraction, backlink verification, Common Crawl connector,
-competitor/link-gap engine, a real API layer, contact intelligence,
+competitor/link-gap engine, a real API layer, search-pattern backlink
+discovery + independent prospect discovery, contact intelligence,
 email verification, guest-post intelligence, opportunity scoring,
 evidence-on-every-opportunity, an AI provider layer, outreach strategy
 generation, campaign funnel tracking, backlink monitoring,
 reports/exports, and AI-search/GEO intelligence) are
 implemented and tested** — see `app/crawler/`,
 `app/engines/backlink/`, `app/engines/competitor/`,
+`app/engines/prospects/`, `app/engines/search/`,
 `app/engines/contact/`, `app/engines/guest_post/`,
 `app/engines/scoring/`, `app/engines/ai/`, `app/engines/outreach/`,
 `app/engines/campaigns/`, `app/engines/monitoring/`, `app/reports/`,
 `app/engines/geo/`, and
 `app/api/`. Run it with `uvicorn
-app.main:app --reload`. Phase 7 (search-pattern prospect discovery) is skipped for
-now — it needs a search-backend decision (paid API vs. self-hosted vs.
-scraping) that hasn't been made; see the note in `../docs/ARCHITECTURE.md`
-risk #3. The rest of the intelligence engines and the frontend are still
-empty pending their own phases (`../PRODUCT_SPEC.md` §9,
-`../docs/ARCHITECTURE.md` §9) — no premature scaffolding ahead of working
-code underneath it.
+app.main:app --reload`. The frontend is documented separately
+(`../frontend/README.md`).
 
 **Phase 4 caveat:** Common Crawl's own servers are unreachable from this
 build sandbox (policy-denied at the network layer, not a bug — see
@@ -35,17 +32,29 @@ is tested against Ollama's real documented request/response shape with
 the HTTP transport mocked, not a live server. Run a live smoke test
 before depending on it in production.
 
-**Phase 18 caveat, a different shape:** no concrete `AISearchProvider`
-ships at all, not even one whose live reachability is unverified. There
-is no free/self-hostable answer-engine API to build a genuine,
-verifiable integration against the way Ollama's documented API allowed
-(see `../docs/ARCHITECTURE.md` risk #18) — the real paid APIs are
-key-gated and this sandbox can't confirm their current wire format
-closely enough to implement one without guessing. `app/engines/geo/`
-ships the interface, the deterministic citation-matching logic, and a
-`FakeAISearchProvider` test double instead; picking and implementing a
-real provider is future work, same posture as Phase 7's skipped
-search-backend decision.
+**Phase 7 and Phase 18 caveat, a shared one:** both search-pattern
+backlink discovery (`app/engines/backlink/search_discovery.py`),
+independent prospect discovery (`app/engines/prospects/discover.py`),
+and automated GEO citation checking (`app/engines/geo/citations.py`)
+are backed by a single concrete `AISearchProvider`:
+`AnthropicSearchProvider` (`app/engines/search/anthropic_provider.py`),
+built against Claude's own `web_search` server tool. Unlike Ollama,
+this sandbox has no way to make a live call against it either — the
+same proxy policy that blocks Ollama/Common Crawl blocks this too — so
+it's tested with the real `anthropic` Python SDK's HTTP calls
+intercepted by `respx`, proven correct against the tool's documented
+request/response shape (independently confirmed via a live fetch of
+the current API reference, not recalled from training data or
+guessed), not against a live key. Also note: `anthropic` is pinned
+`<1.0` — the 1.x line moves to a separate `httpx2` transport `respx`
+can't intercept; see `../docs/ARCHITECTURE.md` risk #19 for the full
+detail, including an undocumented failure mode found empirically (a
+bare `TypeError`, not `anthropic.APIError`, when no credentials
+resolve). Run a live smoke test with a real `ANTHROPIC_API_KEY` before
+depending on any of this in production. `Prospect.topical_fit_score`
+is also explicitly a crude keyword-overlap proxy (topic words vs. host
++ search-answer text), not the real crawl-based scoring Phase 11
+already does for domains you've crawled — see the module docstring.
 
 ## What's here
 
@@ -72,6 +81,24 @@ search-backend decision.
   `BacklinkCandidate` rows for Phase 3 to verify. See its module
   docstring for exactly what Common Crawl's public CDX API can and can't
   answer.
+- `app/engines/backlink/search_discovery.py` — Phase 7 search-pattern
+  backlink discovery: runs `PRODUCT_SPEC.md` §4.2 Layer 2's named query
+  patterns (`intitle:`, `"brand" "resources"`, etc.) against a brand
+  query via `AISearchProvider`, producing `BacklinkCandidate` rows
+  (`source_type=SEARCH_DISCOVERED`) that feed straight into the same
+  Phase 3 verify pipeline as any other candidate source.
+- `app/engines/prospects/discover.py` — Phase 7's other module,
+  independent prospect discovery per `PRODUCT_SPEC.md` §4.4: given only
+  a topic (no competitor, no existing domain), searches category
+  templates (resource pages, roundups, guest-post blogs, industry
+  publications) via `AISearchProvider` and produces domain-level
+  `Prospect` rows with a crude keyword-overlap `topical_fit_score`. See
+  the Phase 7/18 caveat above.
+- `app/engines/search/` — the shared search-backend abstraction: an
+  `AISearchProvider` interface (`query -> answer_text + citations`) and
+  `AnthropicSearchProvider`, its one concrete implementation, used by
+  both Phase 7's discovery modules and Phase 18's citation checking.
+  See the Phase 7/18 caveat above.
 - `app/engines/competitor/` — competitor relationship tracking and link
   gap computation. No `projects` concept exists yet, so a competitor
   relationship is just "domain A treats domain B as a competitor" keyed
@@ -163,11 +190,12 @@ search-backend decision.
   needs no API at all — a human who checked a real answer engine logs
   what they saw. `check_citation()` is the automated path via an
   `AISearchProvider`, with deterministic registrable-domain matching
-  against whatever citation URLs a provider returns — but no concrete
-  provider ships yet; see the Phase 18 caveat above.
+  against whatever citation URLs a provider returns — wired to
+  `AnthropicSearchProvider` (`app/engines/search/`) via `POST
+  /geo/check`; see the Phase 7/18 caveat above.
 - `app/api/` + `app/main.py` — the FastAPI layer. Domain-centric routes
   (`/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`,
-  `/contacts`, `/guest-posts`, `/opportunities`, `/outreach`,
+  `/prospects`, `/contacts`, `/guest-posts`, `/opportunities`, `/outreach`,
   `/campaigns`, `/reports`, `/geo`) since
   there's no `projects`/auth layer yet; sync SQLAlchemy sessions via
   `app/api/deps.py` (FastAPI runs sync route functions in a threadpool).
@@ -177,37 +205,41 @@ search-backend decision.
   crawl_requests, crawl_errors, pages, page_links), the backlink engine
   schema (backlink_candidates, backlink_observations, backlinks), the
   competitor/link-gap schema (competitor_relationships,
-  link_gap_opportunities), the contact schema (contacts,
+  link_gap_opportunities), the prospect discovery schema (prospects),
+  the contact schema (contacts,
   contact_sources), the outreach schema (outreach_strategies), the
   campaign schema (campaigns, campaign_events), and the monitoring
   schema (backlink_monitoring_events, plus `backlinks.lost_at`). See
   `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 150 tests, all real except the Common Crawl and Ollama
-  HTTP layers and the (nonexistent) answer-engine calls (see the Phase 4,
-  Phase 13, and Phase 18 caveats above): unit tests
+- `app/tests/` — 175 tests, all real except the Common Crawl, Ollama,
+  and Anthropic HTTP layers (see the Phase 4, Phase 13, and Phase 7/18
+  caveats above): unit tests
   for normalization/fingerprinting/JS-detection/extraction/
   classification/CDX-parsing against local HTML fixtures
-  (`app/tests/fixtures/html/`), unit tests for `OllamaProvider`'s request/
+  (`app/tests/fixtures/html/`), unit tests for `OllamaProvider`'s and
+  `AnthropicSearchProvider`'s request/
   response handling against `respx`-mocked HTTP, unit tests for the
   report writers (each format round-tripped through its own real
   parser/reader), and integration tests
   that run the actual crawler, backlink verification, competitor/
-  link-gap, contact/guest-post/opportunity, outreach-strategy,
+  link-gap, search-pattern discovery, prospect discovery,
+  contact/guest-post/opportunity, outreach-strategy,
   campaign-funnel, backlink-monitoring, report-generation, and
   GEO-citation pipelines
   against a local fixture HTTP server
   (`app/tests/fixtures/server.py`, which can bind multiple loopback
   addresses to simulate genuinely distinct source domains) and a real
   Postgres test database — no mocked HTTP, no mocked DB, anywhere except
-  the Common Crawl connector's and Ollama provider's own external calls.
+  the Common Crawl connector's, Ollama provider's, and Anthropic search
+  provider's own external calls.
   `app/tests/fixtures/fake_ai_provider.py`'s `FakeAIProvider` is a
   reusable in-memory `AIProvider` test double for later phases that
   consume AI without depending on Ollama being reachable, and
   `app/tests/fixtures/fake_ai_search_provider.py`'s `FakeAISearchProvider`
-  does the same for `AISearchProvider` (Phase 18), since no concrete
-  answer-engine integration exists to test against at all.
+  does the same for `AISearchProvider` (Phase 7 and Phase 18), for tests
+  that only need deterministic search results, not real HTTP-layer proof.
 
 ## Running it
 
@@ -257,9 +289,7 @@ asyncio.run(run_crawl("https://example.com", max_pages=10))
   environment-based egress-proxy configuration; `app/crawler/http_crawler.py`
   uses Crawlee's `HttpxHttpClient` instead. Keep that if you touch this
   file — see `../docs/ARCHITECTURE.md` risk #11.
-- Backlink discovery (Common Crawl + search-pattern candidates feeding
-  `BacklinkCandidate` rows) is Phase 4/7, not built yet — Phase 3 only
-  implements verification given a candidate. `classify_link_type`
+- `classify_link_type`
   (`app/engines/backlink/classify.py`) only labels NAVIGATION/FOOTER/
   SPONSORED/UGC deterministically; the fuller taxonomy (guest_post,
   directory, citation, ...) needs content judgment and is Phase 12 AI
@@ -273,19 +303,17 @@ asyncio.run(run_crawl("https://example.com", max_pages=10))
   site on the web that might link to X" by itself (that reverse-index
   query isn't available through the free CDX API; see the module
   docstring). It's one candidate source among several; search-pattern
-  discovery (Phase 7) is the other free one from `PRODUCT_SPEC.md` §4.2
-  Layer 2, not built yet. Run a live smoke test against the real Common
-  Crawl service before depending on this in production — see
-  `../docs/ARCHITECTURE.md` risk #14.
+  discovery (`app/engines/backlink/search_discovery.py`, Phase 7) is
+  the other one from `PRODUCT_SPEC.md` §4.2 Layer 2. Run a live smoke
+  test against the real Common Crawl service before depending on this
+  in production — see `../docs/ARCHITECTURE.md` risk #14.
 - If you build a Crawlee crawler directly instead of going through
   `build_http_crawler`/`build_playwright_crawler`, give it its own
   uniquely-named `RequestQueue` — see `../docs/ARCHITECTURE.md` risk
   #15 for why a fresh `MemoryStorageClient()` alone isn't sufficient.
-- No `/opportunities` or `/prospects` API endpoints yet (`/contacts`
-  exists as of Phase 9: `GET /contacts?domain_id=`, `POST
-  /contacts/{id}/verify-email`). `/link-gaps` is the only
-  "opportunity"-shaped view so far, and it's the raw competitor-overlap
-  signal, not a scored opportunity.
+- `/link-gaps` is the raw competitor-overlap signal (`POST
+  /opportunities/score` is the actual weighted Opportunity Score, Phase
+  11) — don't conflate the two.
 - Contact name/role pairing only handles two safe, unambiguous cases
   (schema.org `Person`, single-person pages) by design — a page with
   multiple people and no structured markup yields correctly-unattributed

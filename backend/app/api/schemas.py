@@ -139,6 +139,18 @@ class OpportunityScoreOut(BaseModel):
     computed_at: datetime
 
 
+class BacklinkCandidateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    source_url: str
+    target_url: str
+    target_domain_id: uuid.UUID
+    source_type: str
+    discovery_method: str | None
+    status: str
+
+
 class LinkGapOpportunityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -205,6 +217,20 @@ class BacklinkMonitoringEventOut(BaseModel):
     after_state: dict | None
     detail: str
     detected_at: datetime
+
+
+class ProspectOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    domain_id: uuid.UUID
+    domain_host: str
+    topic_query: str
+    category: str
+    source_url: str
+    topical_fit_score: int
+    evidence: list[str]
+    discovered_at: datetime
 
 
 class GEOObservationOut(BaseModel):

@@ -1,11 +1,12 @@
 """An in-memory `AISearchProvider` test double, same pattern as
 `fake_ai_provider.py`'s `FakeAIProvider`. Queue exact `AISearchResult`
-values to return, in call order -- used to prove `check_citation`'s
-citation-matching logic is correct without depending on any real answer
-engine (none is implemented -- see app/db/models.py's Phase 18 comment).
+values to return, in call order -- used by both Phase 18 (citation
+checking) and Phase 7 (search-pattern discovery) tests so their
+matching/parsing logic can be proven without depending on live network
+access to the real `AnthropicSearchProvider` (app/engines/search/).
 """
 
-from app.engines.geo.provider import AISearchProvider, AISearchResult
+from app.engines.search.provider import AISearchProvider, AISearchResult
 
 
 class FakeAISearchProvider(AISearchProvider):

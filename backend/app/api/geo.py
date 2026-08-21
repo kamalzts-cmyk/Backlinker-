@@ -6,10 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.errors import NotFoundError
+from app.api.errors import NotFoundError, UpstreamServiceError
 from app.api.schemas import GEOObservationOut
+from app.core.config import settings
 from app.db.models import GEOCitationResult, GEOObservation
-from app.engines.geo.citations import record_manual_observation
+from app.engines.geo.citations import check_citation, record_manual_observation
+from app.engines.search.anthropic_provider import AnthropicSearchProvider
+from app.engines.search.errors import AISearchError
 
 router = APIRouter(prefix="/geo", tags=["geo"])
 
@@ -23,14 +26,16 @@ class RecordObservationIn(BaseModel):
     answer_excerpt: str | None = None
 
 
+class CheckCitationIn(BaseModel):
+    query: str
+    target_domain_id: uuid.UUID
+
+
 @router.post("/observations", response_model=GEOObservationOut, status_code=201)
 def create_observation(body: RecordObservationIn, db: Session = Depends(get_db)) -> GEOObservation:
     """Logs what a human observed checking a real answer engine
-    themselves. There's no automated check-citation endpoint here: no
-    concrete AISearchProvider ships in this project yet (see
-    app/db/models.py's Phase 18 comment for why) -- app.engines.geo.
-    citations.check_citation exists for when one does, exercised in
-    tests via a fake provider.
+    themselves -- no API integration needed. See POST /geo/check for the
+    automated path.
     """
     try:
         return record_manual_observation(
@@ -44,6 +49,34 @@ def create_observation(body: RecordObservationIn, db: Session = Depends(get_db))
         )
     except ValueError as exc:
         raise NotFoundError(str(exc)) from exc
+
+
+@router.post("/check", response_model=GEOObservationOut, status_code=201)
+async def check_citation_endpoint(
+    body: CheckCitationIn, db: Session = Depends(get_db)
+) -> GEOObservation:
+    """Automated citation check via `AnthropicSearchProvider` (Claude's
+    web search tool -- see app/engines/search/anthropic_provider.py for
+    why this is the concrete provider). Requires an Anthropic API key
+    configured for this deployment (ANTHROPIC_API_KEY or an `ant auth
+    login` profile); a failed upstream call is a 502, never a fabricated
+    result.
+    """
+    provider = AnthropicSearchProvider(
+        api_key=settings.anthropic_api_key, model=settings.anthropic_model
+    )
+    try:
+        return await check_citation(
+            db,
+            query=body.query,
+            engine=f"anthropic:{settings.anthropic_model}",
+            target_domain_id=body.target_domain_id,
+            provider=provider,
+        )
+    except ValueError as exc:
+        raise NotFoundError(str(exc)) from exc
+    except AISearchError as exc:
+        raise UpstreamServiceError(str(exc)) from exc
 
 
 @router.get("/observations", response_model=list[GEOObservationOut])

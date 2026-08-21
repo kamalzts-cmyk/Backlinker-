@@ -919,24 +919,17 @@ class BacklinkMonitoringEvent(TimestampMixin, Base):
 #      and is a completely legitimate way to satisfy "never asserted
 #      without a logged observation" -- PRODUCT_SPEC.md never requires
 #      the check to be automated, only that it's evidenced.
-#   2. check_citation() -- automated, via an AISearchProvider. Unlike
-#      Phase 13's Ollama, there is no free/open-source, self-hostable
-#      "answer engine" API this project can build a concrete, verifiable
-#      integration against right now: the real paid APIs that return
-#      citations (Perplexity, etc.) are keyed, and this sandbox can't
-#      confirm their current documented request/response shape closely
-#      enough to implement one without guessing at wire-format details --
-#      a materially different situation from Ollama (self-hostable,
-#      well-established documented API) or Common Crawl (public,
-#      unauthenticated, well-established documented API). Shipping a
-#      "real" provider implementation built on an unverified guess would
-#      be exactly the kind of fabrication PRODUCT_SPEC.md warns against,
-#      just moved into code instead of into a number. So Phase 18 ships
-#      the interface, the deterministic citation-matching logic, and a
-#      FakeAISearchProvider test double proving that logic is correct --
-#      same posture as Phase 7's skipped search-backend decision, not
-#      Phase 13's "built, just unreachable here" one. See
-#      docs/ARCHITECTURE.md risk #18.
+#   2. check_citation() -- automated, via an AISearchProvider
+#      (app/engines/search/). The concrete implementation,
+#      AnthropicSearchProvider, is built on Claude's web search tool --
+#      unlike a competing paid answer-engine API, its request/response
+#      shape was independently verified against the live API reference
+#      at implementation time rather than guessed at, which is what
+#      actually made this buildable (see app/engines/search/
+#      anthropic_provider.py's docstring and docs/ARCHITECTURE.md risk
+#      #19). check_citation()'s own matching logic stays deterministic
+#      either way: does a returned URL resolve to the domain being
+#      checked, never a fuzzy/semantic judgment call.
 # ---------------------------------------------------------------------------
 
 
@@ -962,3 +955,61 @@ class GEOObservation(TimestampMixin, Base):
     source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     answer_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Phase 7: prospect discovery (see PRODUCT_SPEC.md §4.4):
+#
+#   "Independent discovery of relevant websites (not just
+#   competitor-derived): resource pages, industry publications, blogs
+#   accepting contributions, 'best of' / 'top tools' roundups, etc.,
+#   filtered and ranked by topical fit to the user's entity/topic
+#   profile."
+#
+# Distinct from BacklinkCandidate (search-pattern discovery, PRODUCT_SPEC.md
+# §4.2 Layer 2, app/engines/backlink/search_discovery.py): that's about
+# finding pages that might already mention/link to a specific target.
+# This is about finding topically relevant SITES worth pitching at all,
+# independent of whether they've ever mentioned the target -- a
+# domain-level Prospect, not a URL-level backlink candidate. Both reuse
+# the same search backend (app/engines/search/) -- see
+# app/engines/prospects/discover.py for why this resolves
+# docs/ARCHITECTURE.md risk #3.
+#
+# `topical_fit_score` is a crude keyword-overlap proxy (topic query vs.
+# the prospect's own host + the search backend's answer text) -- same
+# "crude, not semantic" honesty already established for Phase 11's own
+# topical_relevance component. A real comparison against the user's own
+# crawled content needs a full crawl of the prospect, which is exactly
+# what `POST /opportunities/score?reference_domain_id=` already does
+# once a prospect is registered as a Domain here -- this module feeds
+# that one, it doesn't duplicate it.
+# ---------------------------------------------------------------------------
+
+
+class ProspectCategory(str, enum.Enum):
+    RESOURCE_PAGE = "resource_page"
+    ROUNDUP = "roundup"
+    GUEST_POST_BLOG = "guest_post_blog"
+    INDUSTRY_PUBLICATION = "industry_publication"
+
+
+class Prospect(TimestampMixin, Base):
+    """Recomputed (upserted) per (domain_id, topic_query) -- re-running
+    discovery for the same topic refreshes the same row rather than
+    duplicating it, same pattern as LinkGapOpportunity/
+    GuestPostOpportunity/OpportunityScore.
+    """
+
+    __tablename__ = "prospects"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    domain_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domains.id"), index=True)
+    topic_query: Mapped[str] = mapped_column(String(500))
+    category: Mapped[ProspectCategory] = mapped_column(Enum(ProspectCategory, name="prospect_category"))
+    source_url: Mapped[str] = mapped_column(String(2048))
+    topical_fit_score: Mapped[int] = mapped_column(Integer)
+    evidence: Mapped[list] = mapped_column(JSON)  # list[str]
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("domain_id", "topic_query", name="uq_prospect_domain_topic"),)

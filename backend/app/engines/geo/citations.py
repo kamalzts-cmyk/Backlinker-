@@ -9,10 +9,12 @@ Two ways to produce that log:
 
 - `record_manual_observation()` -- a human checked a real answer engine
   themselves and reports what they saw. Needs no API integration.
-- `check_citation()` -- automated, via an `AISearchProvider`. The
-  citation match itself is deterministic: does any URL the provider
-  returned resolve to the same registrable domain being checked? Never a
-  fuzzy/semantic judgment call.
+- `check_citation()` -- automated, via an `AISearchProvider` (see
+  app/engines/search/ -- `AnthropicSearchProvider` is the concrete
+  implementation, built on Claude's web search tool). The citation match
+  itself is deterministic: does any URL the provider returned resolve to
+  the same registrable domain being checked? Never a fuzzy/semantic
+  judgment call.
 """
 
 import uuid
@@ -22,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.crawler.normalize import registrable_domain_for_url
 from app.db.models import Domain, GEOCitationResult, GEOObservation
-from app.engines.geo.provider import AISearchProvider
+from app.engines.search.provider import AISearchProvider
 
 _EXCERPT_MAX_CHARS = 500
 

@@ -142,3 +142,35 @@ export async function recordGeoObservationAction(formData: FormData) {
   });
   revalidatePath(`/domains/${domainId}`);
 }
+
+export async function checkGeoCitationAction(formData: FormData) {
+  const domainId = str(formData, "domain_id");
+  await apiPost("/geo/check", {
+    query: str(formData, "query"),
+    target_domain_id: domainId,
+  });
+  revalidatePath(`/domains/${domainId}`);
+}
+
+export async function discoverSearchAction(formData: FormData) {
+  const domainId = str(formData, "domain_id");
+  await apiPost("/backlinks/discover-search", {
+    brand_query: str(formData, "brand_query"),
+    target_domain_id: domainId,
+    target_url: str(formData, "target_url"),
+  });
+  revalidatePath(`/domains/${domainId}`);
+}
+
+export async function verifyCandidateAction(formData: FormData) {
+  const domainId = str(formData, "domain_id");
+  const candidateId = str(formData, "candidate_id");
+  await apiPost(`/backlinks/candidates/${candidateId}/verify`);
+  revalidatePath(`/domains/${domainId}`);
+}
+
+export async function discoverProspectsAction(formData: FormData) {
+  const topic = str(formData, "topic");
+  await apiPost("/prospects/discover", { topic });
+  redirect(`/prospects?topic=${encodeURIComponent(topic)}`);
+}

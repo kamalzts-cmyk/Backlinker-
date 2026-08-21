@@ -85,15 +85,19 @@ split it into a separate deployable in v1).
 │   │   │   ├── extractors/         # page, link, contact, schema extractors
 │   │   │   └── fingerprint.py
 │   │   ├── engines/
-│   │   │   ├── backlink/           # discovery + verification + observations
+│   │   │   ├── backlink/           # discovery + verification + observations,
+│   │   │   │                       # incl. search_discovery.py (Phase 7 candidates)
 │   │   │   ├── common_crawl/       # CDX query client
 │   │   │   ├── competitor/         # link gap
-│   │   │   ├── prospect/           # discovery + scoring
+│   │   │   ├── prospects/          # Phase 7 independent prospect discovery + scoring
 │   │   │   ├── contact/            # extraction + verification
 │   │   │   ├── author/
 │   │   │   ├── guest_post/
 │   │   │   ├── scoring/            # opportunity + sub-scores + evidence
 │   │   │   ├── ai/                 # provider interface: Ollama / OpenAI / Anthropic
+│   │   │   ├── search/             # AISearchProvider interface + AnthropicSearchProvider,
+│   │   │   │                       # shared by Phase 7 discovery and Phase 18 GEO citations
+│   │   │   ├── geo/                # GEOObservation + check_citation (Phase 18)
 │   │   │   └── outreach/           # strategy, drafting, campaigns
 │   │   ├── workers/                # Celery/RQ task definitions per queue
 │   │   └── tests/
@@ -143,7 +147,13 @@ Adapted to the backend's *real* domain-centric route surface (no
 per-module route list this section originally sketched: pages are
 organized around a domain detail hub (`/domains/[id]`) plus focused
 detail pages for a crawl job, a backlink, and a campaign, instead of one
-flat route per engine.
+flat route per engine. The one exception is `/prospects` (Phase 7):
+since prospect discovery is topic-keyed rather than domain-keyed, it
+gets its own top-level route (topic search form + results list) rather
+than living under a domain hub. `/domains/[id]` also gained two Phase
+7/18 sections: pending search-pattern-discovered `BacklinkCandidate`s
+(with an inline verify action) and an automated "check citation now"
+form (`POST /geo/check`) alongside the pre-existing manual GEO-log form.
 
 Every backend call runs server-side — reads in `async` Server
 Components (`fetch`, `cache: "no-store"`), writes via Server Actions
@@ -229,7 +239,7 @@ phase. "Frontend renders" is never sufficient on its own.
 | 4 ✅ | Common Crawl connector | **Done, with a caveat.** CDX index query + WARC-record Range-fetch (reusing the Phase 2 link extractor on the fetched HTML) produces real `BacklinkCandidate` rows that flow straight into Phase 3 verification — proven end-to-end against a real Postgres database and a real live verification pass. The one piece not independently proven is the raw HTTP calls to Common Crawl's own servers: `index.commoncrawl.org`/`data.commoncrawl.org` are policy-denied by *this build sandbox's* egress proxy (confirmed via the proxy's diagnostic log — a real, persistent policy denial, not a flake), so those two endpoints are tested against fixtures shaped exactly like their documented real response formats (CDX JSON, gzip WARC records) rather than the live service. Needs one live smoke test in an environment with normal internet access before fully trusting it in production — see risk #14. |
 | 5 ✅ | Competitor engine | **Done.** `CompetitorRelationship` (domain-keyed, no `projects` table needed yet) + `compute_link_gap()`, a pure query over existing `backlinks` rows — "crawling a competitor" is just Phase 3/4 discovery/verification run with the competitor's domain as the target, no new crawl mechanism needed. Proven with a fully real multi-domain scenario (distinct loopback addresses as genuinely separate source domains, real crawls, real Postgres), confirming correct overlap counting/tiering and correct exclusion of domains that already link to the primary. Surfaced and fixed a real Crawlee bug in the process — see risk #15. |
 | 6 ✅ | Link gap engine + API | **Done** (API only at the time — the frontend consuming it was built later, see §4). Introduces `app/api/` (FastAPI, domain-centric since no `projects`/auth layer exists yet): `/domains`, `/crawl`, `/backlinks`, `/competitors`, `/link-gaps`. `/link-gaps` recomputes on every call (cheap query over `backlinks`) and returns real, evidenced opportunities — proven via `TestClient` driving the real route handlers against a real Postgres test database, including a real crawl through `/crawl` and a real verified backlink through `/backlinks`. |
-| 7 | Prospect discovery | Independently discovered prospects (not just competitor-derived) with topical scores |
+| 7 ✅ | Prospect discovery | **Done.** Two distinct engines, both driven by `AnthropicSearchProvider` (Claude's web-search tool, see risk #3/#18/#19) rather than a scrape-based search backend. `app/engines/backlink/search_discovery.py`'s `discover_candidates_from_search()` covers PRODUCT_SPEC §4.2 Layer 2: named query patterns (`intitle:`, `"brand" "resources"`, etc.) against `brand_query`, producing URL-level `BacklinkCandidate` rows (`source_type=SEARCH_DISCOVERED`) that flow into the existing Phase 3 verify pipeline via `POST /backlinks/discover-search` + `POST /backlinks/candidates/{id}/verify`. `app/engines/prospects/discover.py`'s `discover_prospects()` is the independent, PRODUCT_SPEC §4.4 module this row's exit criteria actually names: given only a topic (no competitor, no existing domain), it searches category-specific templates (resource pages, roundups, guest-post blogs, industry publications) and produces domain-level `Prospect` rows with a `topical_fit_score` -- explicitly documented as a crude keyword-overlap proxy (topic words vs. host + search-answer text), not a duplicate of Phase 11's real, crawl-based `topical_relevance` scoring, which remains the source of truth once a domain has been crawled. `POST /prospects/discover`, `GET /prospects`. 6 new integration tests (`FakeAISearchProvider` + real Postgres) plus API-level tests in `test_api.py`. |
 | 8 ✅ | Contact intelligence | **Done.** Reuses the Phase 1/2 crawler (no separate contact-crawling mechanism); classifies contact-relevant pages by URL path (about/contact/team/author/guest-post/press) and turns Phase 2's page-level `contact_emails`/`contact_phones`/`schema_org` into full, uncapped `Contact` rows with provenance. Deliberately refuses to guess a name/email pairing beyond schema.org `Person` markup or an unambiguous single-person page (exactly one heading + one email) — proven by a test asserting a multi-person team page leaves names unattributed rather than mis-paired. 11 new tests, all real (fixture server + real Postgres). Live-checked against pypi.org: correctly returned zero contacts, since its crawl-reachable pages don't include an about/contact/team page — an honest negative result, not a bug. |
 | 9 ✅ | Email verification | **Done for the deterministic layers.** Syntax, domain DNS/MX (with RFC 5321 A-record fallback), and a disposable-domain list — genuinely proven with real, live DNS lookups (no mocking needed; unlike HTTPS, DNS resolution isn't restricted in this sandbox). SMTP-level mailbox/catch-all probing is out of scope, not silently skipped: outbound port 25 is blocked here (confirmed with a direct TCP connect test) and PRODUCT_SPEC.md is independently skeptical of it — we never send a verification email. Ceiling is `LIKELY`, never `VERIFIED`/`CATCH_ALL`. `EmailVerification` keeps a full history per contact; `POST /contacts/{id}/verify-email` exposes it. |
 | 10 ✅ | Guest-post intelligence | **Done.** Reuses Phase 1/2 crawl + Phase 8 page classification to find and analyze the guideline page (word-count range, dofollow/nofollow/sponsored/author-bio mentions, editor email, closed-submissions detection — all via named, explicit regex patterns, not general NLP). The probability score factors in distinct authors already observed on the domain's author pages as a proxy for "does this site publish more than one person" — explicitly labeled a proxy, not confirmed third-party authorship, since we can't yet distinguish staff writers from guest contributors. Also retroactively completes a Phase 2 gap: added the `pages.body_text` column (already documented in `docs/DATABASE.md`'s indexing strategy but never actually added) plus the full-text GIN index it was meant to back. 7 new tests, all real. |
@@ -240,7 +250,7 @@ phase. "Frontend renders" is never sufficient on its own.
 | 15 ✅ | Campaigns (human-approved send) | **Done.** `app/engines/campaigns/funnel.py`: a `Campaign` is a record a human creates from an `OutreachStrategy` *after* pitching a contact through their own email client -- there is no `send_email` function anywhere in this codebase, confirmed by grep, not just by claim. `record_event` logs each real-world funnel-stage transition (sent/delivered/bounced/opened/clicked/replied/positive_reply/negative_reply/unsubscribed/published/backlink_detected/backlink_verified) as the human reports it; no ordering is enforced since real outreach doesn't move through these linearly. `check_backlink_detected` is the one non-manual transition: it queries the real Phase 3 `backlinks` table for a link matching the human-supplied `target_url`, and because that table only ever holds already-verified links by construction, BACKLINK_DETECTED and BACKLINK_VERIFIED are recorded together with a note explaining why, rather than faking a gap between them. Proven end-to-end: real contact discovery → real strategy generation → campaign creation → recorded events → a real crawl+verify (Phase 3) producing a real backlink → `check_backlink_detected` correctly finding it and advancing the funnel, with a prior check correctly finding nothing before the backlink existed. `POST /campaigns`, `GET /campaigns/{id}`, `POST /campaigns/{id}/events`, `POST /campaigns/{id}/check-backlink`. 4 new tests, all real, no mocking. |
 | 16 ✅ | Backlink monitoring | **Done** (on-demand re-check; no scheduler wired up -- see the note below). `app/engines/monitoring/recheck.py`'s `recheck_backlink()` re-runs Phase 3's real candidate verification for a tracked backlink's exact (source_url, target_url) pair and diffs the new observation against the previous one, producing explicit before/after `BacklinkMonitoringEvent` rows for exactly what changed (link attributes, anchor text, source HTTP status, canonical URL) -- never a bare "something changed." A rejected re-verification (the link is gone) sets a new `lost_at` timestamp on the `backlinks` row, since a lost link produces no new `BacklinkObservation` to derive state from -- the one intentional, documented exception to that table's "never hand-edited" rule (see `Backlink`'s docstring). "Target changed" from the spec's list isn't attempted: re-verification checks whether *this* target_url is still linked, so a retargeted source page surfaces as LOST, not as a distinguishable "retargeted" event -- not guessed. Proven with 4 real tests: an actual attribute+anchor change detected across two real crawls of the same URL (fixture content temporarily swapped on disk between crawls), a stable link producing zero false-positive events, a genuinely unreachable source correctly producing LOST and setting `lost_at`, and an unknown-backlink error path. `POST /backlinks/{id}/recheck`, `GET /backlinks/{id}/monitoring-events`. Periodic scheduling (a cron/worker calling `recheck_backlink` on a cadence) is not built -- there's no task-queue/scheduler infrastructure in this project yet, and adding one just to call an already-correct function would be exactly the premature scaffolding `PRODUCT_SPEC.md` warns against; the on-demand endpoint is the real, tested primitive a scheduler would call. |
 | 17 ✅ | Reports/exports | **Done.** `app/reports/`: `rows.py` builds real row data for five report types (backlinks, link_gaps, contacts, guest_posts, opportunity_scores) by querying the tables Phases 3/5/8/10/11 already populated -- no new computation, only formatting. `export.py` writes the same row/column shape to CSV and JSON (stdlib), XLSX (`openpyxl`), and PDF (`reportlab`) -- real files each format's own library can read back, not a text file wearing an extension (proven by round-tripping every format through its real parser/reader in tests, and asserting the PDF bytes start with the real `%PDF-` magic number). `GET /reports/{report_type}?format=csv\|json\|xlsx\|pdf&...filters`. 17 new tests (5 unit on the writers, 5 integration proving a backlinks-CSV and contacts-JSON report reflect an actual verified backlink/discovered contact byte-for-value, plus error-path tests, plus 2 API-level). |
-| 18 ✅ | AI-search/GEO intelligence | **Done, minus a live provider (needs a decision -- see risk #18, same posture as Phase 7).** `GEOObservation` is the append-only `{query, engine, timestamp, observed_result, source_url}` log `PRODUCT_SPEC.md` §4.8 requires -- every citation claim is backed by one, never asserted bare. Two ways to produce one: `record_manual_observation()` (a human checked a real answer engine themselves and logs what they saw -- no API needed, fully legitimate) and `check_citation()` (automated, via an `AISearchProvider`; the citation match itself is deterministic registrable-domain comparison against whatever URLs the provider returns, never a fuzzy judgment call). No concrete `AISearchProvider` ships: unlike Ollama, there's no free/self-hostable answer-engine API this sandbox can build and verify a real integration against, and guessing at a paid API's current wire format would be exactly the fabrication this project refuses to do elsewhere. `check_citation`'s matching logic is proven correct against a `FakeAISearchProvider`. `POST /geo/observations`, `GET /geo/observations` (manual-logging API only -- no automated-check endpoint, since there's no default provider to wire it to). 7 new tests, all real except the fake provider. |
+| 18 ✅ | AI-search/GEO intelligence | **Done, including a live provider (see risk #18/#19).** `GEOObservation` is the append-only `{query, engine, timestamp, observed_result, source_url}` log `PRODUCT_SPEC.md` §4.8 requires -- every citation claim is backed by one, never asserted bare. Two ways to produce one: `record_manual_observation()` (a human checked a real answer engine themselves and logs what they saw -- no API needed, fully legitimate) and `check_citation()` (automated, via an `AISearchProvider`; the citation match itself is deterministic registrable-domain comparison against whatever URLs the provider returns, never a fuzzy judgment call). `AnthropicSearchProvider` (`app/engines/search/anthropic_provider.py`) is the concrete provider that resolved the earlier gap: it uses Claude's own `web_search` server tool, whose request/response shape was confirmed via a live fetch of the current API reference rather than guessed -- the same tool also backs Phase 7's discovery engines. `check_citation`'s matching logic is proven correct against both a `FakeAISearchProvider` and `respx`-mocked `AnthropicSearchProvider` requests. `POST /geo/observations`, `GET /geo/observations`, `POST /geo/check` (automated, wired to `AnthropicSearchProvider`). 7 Phase-18 tests plus new provider/API tests (see risk #19 for what remains unverified against a live key). |
 
 ## 10. Technical risks and contradictions (flagged for review before Phase 1)
 
@@ -255,12 +265,18 @@ phase. "Frontend renders" is never sufficient on its own.
    from Common Crawl alone — direct verification and search discovery are
    required to raise confidence, and the UI must show coverage confidence,
    not false completeness (see spec §"don't promise all backlinks").
-3. **Search discovery depends on a search backend** (a scraping-friendly
-   engine or a paid Search API) that isn't named in the "free-first"
-   stack. This is a real gap: query-pattern discovery (§4.2 layer 2) needs
-   *something* to execute searches against. Needs an explicit decision
-   (self-hosted SearX instance vs. a rate-limited scrape vs. a small paid
-   API budget) before Phase 4/7 — flagging rather than silently assuming.
+3. **(Resolved in Phase 7 build) Search discovery depends on a search
+   backend** (a scraping-friendly engine or a paid Search API) that isn't
+   named in the "free-first" stack. This is a real gap: query-pattern
+   discovery (§4.2 layer 2) needs *something* to execute searches
+   against. **Decision made:** reuse Claude's own web search tool
+   (`app/engines/search/anthropic_provider.py`) as the search backend for
+   both Phase 7 (this risk) and Phase 18 (risk #18/#19) rather than a
+   self-hosted SearX instance, a rate-limited scrape, or a paid Search
+   API budget. Not free the way Ollama or Common Crawl are, but its
+   request/response shape was independently verified against the live
+   API reference at implementation time — see risk #19 for the full
+   rationale and its one remaining caveat.
 4. **SMTP-level email verification is inherently unreliable** (catch-all
    domains, greylisting, many mail servers reject unknown-sender probes
    outright). The spec's own confidence-state model (§4.6) is the correct
@@ -401,28 +417,58 @@ phase. "Frontend renders" is never sufficient on its own.
     on it in production. `app/tests/fixtures/fake_ai_provider.py`'s
     `FakeAIProvider` lets Phase 14 (the only consumer of `AIProvider` so
     far) be tested without depending on Ollama being reachable at all.
-18. **(Confirmed in Phase 18 build) No free/open-source, self-hostable
-    "answer engine" API exists to build a verifiable `AISearchProvider`
-    implementation against, unlike Ollama.** The real APIs that return
-    AI-answer citations (Perplexity, etc.) are paid and key-gated, and
-    this sandbox can't confirm their current documented request/response
-    shape closely enough to implement a genuine integration without
-    guessing at wire-format details -- a materially different situation
-    from Ollama (self-hostable, well-established documented API,
-    confirmed from training knowledge) or Common Crawl (public,
-    unauthenticated, well-established documented API). Shipping a
-    provider implementation built on an unverified guess would be
-    exactly the fabrication `PRODUCT_SPEC.md` warns against, just moved
-    into code instead of into a number, so none ships. Same posture as
-    risk #3's skipped search-backend decision (Phase 7), not risk #17's
-    "built, just unreachable here" one. What *is* built and real: the
-    `AISearchProvider` interface, `GEOObservation`'s append-only
-    `{query, engine, timestamp, observed_result, source_url}` log per
-    `PRODUCT_SPEC.md` §4.8, deterministic registrable-domain citation
-    matching (`app/engines/geo/citations.py`), a
-    `record_manual_observation()` path needing no API integration at all
-    (a human who checked a real answer engine themselves logs what they
-    saw -- fully legitimate per the spec's own wording, which never
-    requires the check to be automated), and a `FakeAISearchProvider`
-    test double proving the matching logic is correct. Revisit once a
-    provider decision is made, the same way Phase 7 is waiting on one.
+18. **(Confirmed in Phase 18 build, resolved in a later pass) No
+    free/open-source, self-hostable "answer engine" API exists to build
+    a verifiable `AISearchProvider` implementation against, unlike
+    Ollama.** The real APIs that return AI-answer citations (Perplexity,
+    etc.) are paid and key-gated, and this sandbox couldn't confirm
+    their current documented request/response shape closely enough to
+    implement a genuine integration without guessing at wire-format
+    details -- a materially different situation from Ollama
+    (self-hostable, well-established documented API, confirmed from
+    training knowledge) or Common Crawl (public, unauthenticated,
+    well-established documented API). Shipping a provider implementation
+    built on an unverified guess would be exactly the fabrication
+    `PRODUCT_SPEC.md` warns against, just moved into code instead of
+    into a number, so none shipped at first. **Resolved:** see risk #19
+    -- Claude's own web search tool's request/response shape was
+    independently confirmed via a live fetch of the current API
+    reference (not recalled from training data, and not guessed), which
+    removed the actual blocker recorded here. `AnthropicSearchProvider`
+    (`app/engines/search/anthropic_provider.py`) is now the concrete
+    implementation both `check_citation()` (`app/engines/geo/
+    citations.py`, wired to `POST /geo/check`) and Phase 7's discovery
+    modules use. `GEOObservation`'s append-only `{query, engine,
+    timestamp, observed_result, source_url}` log (`PRODUCT_SPEC.md`
+    §4.8) and its deterministic registrable-domain citation matching are
+    unchanged by this -- `record_manual_observation()` (no API needed)
+    remains equally legitimate, and `FakeAISearchProvider` remains the
+    test double for logic that doesn't need to exercise the real
+    provider.
+19. **(Confirmed in the Phase 7/18-resolution build) `AnthropicSearchProvider`
+    is tested with the real Anthropic Python SDK's HTTP calls
+    intercepted by `respx`, not against a live Anthropic API key.** This
+    project has no Anthropic API key configured for its own deployment
+    in this sandbox, so live reachability of `POST /v1/messages` with
+    the `web_search_20250305` tool is unverified here -- same posture as
+    risk #17's Ollama caveat, not risk #18's original "no viable
+    integration exists" one. The response shapes the tests assert
+    against (`web_search_tool_result` content lists, `web_search_result`
+    fields, the `web_search_tool_result_error` error shape, citation
+    blocks) were copied from a live fetch of
+    `platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool`
+    at implementation time, not recalled from training data. Also
+    discovered empirically (not documented behavior): when no Anthropic
+    credentials resolve anywhere (no `api_key`, no `ANTHROPIC_API_KEY`,
+    no `ant auth login` profile), the SDK raises a plain `TypeError` at
+    request-construction time rather than an `anthropic.APIError`
+    subclass -- `AnthropicSearchProvider.search()` catches this
+    specifically so a misconfigured deployment fails with a clear
+    `AISearchError` → `502 upstream_error`, not an unhandled 500. Run a
+    live smoke test with a real key before depending on this in
+    production. **Separately, pinned `anthropic<1.0`:** the 1.x SDK line
+    moves its transport onto a separate `httpx2` package that this
+    project's respx-based HTTP mocking (used consistently for every
+    other provider's tests) cannot intercept; the wire format this
+    project depends on is unchanged between the two SDK major versions,
+    only client-side ergonomics differ.

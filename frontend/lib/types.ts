@@ -66,6 +66,16 @@ export interface BacklinkMonitoringEvent {
   detected_at: string;
 }
 
+export interface BacklinkCandidate {
+  id: string;
+  source_url: string;
+  target_url: string;
+  target_domain_id: string;
+  source_type: string;
+  discovery_method: string | null;
+  status: string;
+}
+
 export interface CompetitorRelationship {
   id: string;
   primary_domain_id: string;
@@ -166,6 +176,18 @@ export interface Campaign {
 
 export interface CampaignDetail extends Campaign {
   events: CampaignEvent[];
+}
+
+export interface Prospect {
+  id: string;
+  domain_id: string;
+  domain_host: string;
+  topic_query: string;
+  category: string;
+  source_url: string;
+  topical_fit_score: number;
+  evidence: string[];
+  discovered_at: string;
 }
 
 export interface GEOObservation {

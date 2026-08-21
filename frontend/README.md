@@ -39,15 +39,25 @@ it isn't an independent contract that can drift.
   ever touched (`GET /domains`, added specifically for this page —
   no list endpoint existed before the frontend needed one).
 - `/domains/[id]` — the hub. Run a crawl; see backlinks pointing at this
-  domain; discover contacts and verify their email; check for a
+  domain; run search-pattern backlink discovery and verify the resulting
+  candidates inline; discover contacts and verify their email; check for a
   guest-post program; the opportunity score (recomputed on every view,
   matching the backend's own "cheap to recompute" design); track
   competitors and see link-gap opportunities; generate an outreach
   strategy per contact and start a campaign from it; log AI-search/GEO
-  citation observations. Two more backend endpoints
-  (`POST /contacts/discover`, `POST /guest-posts/discover`) were added
-  alongside this page for the same reason as `GET /domains` — the
+  citation observations manually, or check one automatically via
+  `POST /geo/check`. Backend endpoints
+  (`POST /contacts/discover`, `POST /guest-posts/discover`,
+  `POST /backlinks/discover-search`, `GET /backlinks/candidates`,
+  `POST /backlinks/candidates/{id}/verify`, `POST /geo/check`) were
+  added alongside this page for the same reason as `GET /domains` — the
   engines existed, nothing exposed them over the API yet.
+- `/prospects` — independent, topic-keyed prospect discovery (Phase 7):
+  a search form (`POST /prospects/discover`) and a results list
+  (`GET /prospects?topic=`) showing each discovered domain's category,
+  crude keyword-overlap fit score, source URL, and evidence. Not
+  domain-scoped like the rest of the app — it doesn't need an existing
+  tracked domain to run.
 - `/crawl/[jobId]` — a crawl job's status, page/error counts.
 - `/backlinks/[id]` — observation history plus the Phase 16 monitor: a
   "Recheck now" button that re-verifies the link for real and shows
@@ -87,7 +97,7 @@ browser, via Playwright, screenshotted at each step. `npm run build`,
 - No test suite of its own yet (no Playwright/Vitest config committed) —
   correctness was verified manually against a live backend for this
   pass rather than with an automated frontend test suite. The backend's
-  154 tests are what actually prove the data this UI displays is real.
+  175 tests are what actually prove the data this UI displays is real.
 - Report downloads accept raw domain-ID text inputs on `/reports`
   rather than a domain picker — there's no cross-engine domain search
   UI yet, just the dashboard's list/search.
