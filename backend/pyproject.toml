@@ -1,3 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Explicit, not auto-discovered: setuptools' flat-layout heuristic sees
+# both app/ and alembic/ as plausible top-level packages (alembic/ has
+# no __init__.py, but does contain .py files) and refuses to guess,
+# failing the editable install outright on newer setuptools -- caught
+# when a fresh install (Render) behaved differently from this project's
+# already-populated local dev venv. alembic/ isn't meant to be
+# `import`ed anyway (that name would shadow the real `alembic` package
+# this project depends on) -- it's driven by the `alembic` CLI reading
+# alembic.ini/env.py straight from the project directory, never
+# installed as a package.
+include = ["app*"]
+
 [project]
 name = "linkintel-backend"
 version = "0.1.0"
