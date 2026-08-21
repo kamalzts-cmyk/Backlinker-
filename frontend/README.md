@@ -69,6 +69,12 @@ it isn't an independent contract that can drift.
   `?contact_id=` filter for this page's use on `/domains/[id]`.
 - `/reports` — pick a report type, format, and filter IDs; downloads a
   real CSV/JSON/XLSX/PDF via the backend's Phase 17 export layer.
+- `/login` — a single shared-password gate for public deployments
+  (`proxy.ts` redirects every other route here when `APP_SHARED_SECRET`
+  is set and no valid session cookie is present; a no-op in local dev,
+  where it's unset). Not a real multi-user auth system -- see
+  `../docs/DEPLOYMENT.md`. The header's "Log out" button only appears
+  once actually authenticated.
 
 ## Running it
 
@@ -79,7 +85,10 @@ npm run dev
 ```
 
 Needs the backend running (`cd ../backend && uvicorn app.main:app --reload`)
-against a migrated Postgres database.
+against a migrated Postgres database. `APP_SHARED_SECRET` is unset by
+default (no login gate, matching the backend's own default) -- see
+`../docs/DEPLOYMENT.md` to put this behind a shared password for a
+public deployment.
 
 Verified with a real backend and a real Postgres database (not just a
 build check): registered a domain, ran a live crawl against pypi.org,
@@ -96,8 +105,12 @@ browser, via Playwright, screenshotted at each step. `npm run build`,
 
 - No test suite of its own yet (no Playwright/Vitest config committed) —
   correctness was verified manually against a live backend for this
-  pass rather than with an automated frontend test suite. The backend's
-  175 tests are what actually prove the data this UI displays is real.
+  pass rather than with an automated frontend test suite (the
+  shared-password login gate was verified end-to-end with a scripted
+  Playwright run: wrong password rejected, correct password sets the
+  session cookie and unlocks every route, logout revokes it). The
+  backend's 178 tests are what actually prove the data this UI displays
+  is real.
 - Report downloads accept raw domain-ID text inputs on `/reports`
   rather than a domain picker — there's no cross-engine domain search
   UI yet, just the dashboard's list/search.

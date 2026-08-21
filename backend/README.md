@@ -213,7 +213,13 @@ already does for domains you've crawled — see the module docstring.
   `../docs/DATABASE.md`.
 - `alembic/` — migrations; `alembic upgrade head` against a real Postgres
   database (matching `docker/.env.example` / `.env.example`).
-- `app/tests/` — 175 tests, all real except the Common Crawl, Ollama,
+- `app/api/auth_gate.py` — `SharedSecretMiddleware`, an opt-in gate for
+  public deployments (see `../docs/DEPLOYMENT.md`). Unset
+  `APP_SHARED_SECRET` (every local dev/test run) is a no-op; set it and
+  every route requires a matching `x-app-secret` header. Not a real
+  auth/`projects` system, just a lock on the front door for the
+  "put this on the public internet" case.
+- `app/tests/` — 178 tests, all real except the Common Crawl, Ollama,
   and Anthropic HTTP layers (see the Phase 4, Phase 13, and Phase 7/18
   caveats above): unit tests
   for normalization/fingerprinting/JS-detection/extraction/
@@ -248,6 +254,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 cp .env.example .env   # point at your local Postgres/Redis
+# (or set DATABASE_URL to a single hosted-Postgres connection string --
+# see ../docs/DEPLOYMENT.md -- it overrides the individual POSTGRES_* vars)
 
 # Create both databases first (see .env.example) then:
 alembic upgrade head

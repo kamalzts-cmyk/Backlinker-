@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import "./globals.css";
+
+import { logoutAction } from "@/app/actions";
+import { SESSION_COOKIE, expectedSessionToken } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "LinkIntel",
@@ -13,7 +17,15 @@ const NAV_LINKS = [
   { href: "/reports", label: "Reports" },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+async function isAuthenticated(): Promise<boolean> {
+  const secret = process.env.APP_SHARED_SECRET;
+  if (!secret) return false;
+  const jar = await cookies();
+  return jar.get(SESSION_COOKIE)?.value === expectedSessionToken(secret);
+}
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const showLogout = await isAuthenticated();
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
@@ -29,6 +41,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
               ))}
             </nav>
+            {showLogout && (
+              <form action={logoutAction} className="ml-auto">
+                <button type="submit" className="text-sm text-slate-500 hover:text-slate-900">
+                  Log out
+                </button>
+              </form>
+            )}
           </div>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>

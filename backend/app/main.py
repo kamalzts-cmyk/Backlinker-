@@ -22,11 +22,13 @@ from app.api import (
     prospects,
     reports,
 )
+from app.api.auth_gate import SharedSecretMiddleware
 from app.api.errors import register_error_handlers
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="LinkIntel API")
+    app.add_middleware(SharedSecretMiddleware)
     register_error_handlers(app)
     app.include_router(domains.router)
     app.include_router(crawl.router)

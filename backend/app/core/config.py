@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,13 +11,19 @@ class Settings(BaseSettings):
     environment.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     postgres_user: str = "linkintel"
     postgres_password: str = "linkintel"
     postgres_db: str = "linkintel"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
+
+    # Most hosted-Postgres providers (Neon, Render, Railway, ...) hand you
+    # one connection string instead of separate user/password/host/db --
+    # set DATABASE_URL and it takes priority over the POSTGRES_* fields
+    # above. See docs/DEPLOYMENT.md.
+    database_url_override: str | None = Field(default=None, validation_alias="DATABASE_URL")
 
     redis_host: str = "localhost"
     redis_port: int = 6379
@@ -31,6 +38,15 @@ class Settings(BaseSettings):
     # -- see that module's docstring. Never hardcode a key here.
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-opus-5"
+
+    # Shared-secret gate for public deployments (see app/api/auth_gate.py).
+    # None (the default, used by every local dev/test run) disables
+    # enforcement entirely -- there is no auth layer in this project by
+    # design (see docs/ARCHITECTURE.md §9), so this is a deliberately
+    # narrow bolt-on for the "put it on the public internet" case only,
+    # not a real multi-user auth system. Set it before deploying publicly
+    # or every route (including the crawler) is open to anyone.
+    app_shared_secret: str | None = None
 
     crawler_user_agent: str = "LinkIntelBot/0.1 (+https://example.invalid/bot)"
     crawler_max_pages_per_job: int = 50
@@ -53,6 +69,12 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        if self.database_url_override:
+            url = self.database_url_override
+            for scheme in ("postgresql://", "postgres://"):
+                if url.startswith(scheme):
+                    return "postgresql+psycopg://" + url[len(scheme) :]
+            return url
         return (
             f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"

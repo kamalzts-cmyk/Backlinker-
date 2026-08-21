@@ -1,10 +1,38 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { apiPost } from "@/lib/api";
+import { SESSION_COOKIE, expectedSessionToken } from "@/lib/auth";
 import type { Campaign, Contact, Domain, GuestPostOpportunity, OutreachStrategy } from "@/lib/types";
+
+export async function loginAction(formData: FormData) {
+  const password = String(formData.get("password") ?? "");
+  const next = String(formData.get("next") ?? "/");
+  const secret = process.env.APP_SHARED_SECRET;
+
+  if (!secret || password !== secret) {
+    redirect(`/login?next=${encodeURIComponent(next)}&error=1`);
+  }
+
+  const jar = await cookies();
+  jar.set(SESSION_COOKIE, expectedSessionToken(secret), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  redirect(next || "/");
+}
+
+export async function logoutAction() {
+  const jar = await cookies();
+  jar.delete(SESSION_COOKIE);
+  redirect("/login");
+}
 
 function str(formData: FormData, key: string): string {
   const value = formData.get(key);

@@ -17,6 +17,9 @@ Read the architecture first, then the code — start here:
 5. [`docs/CRAWLER.md`](./docs/CRAWLER.md) — crawl engine mechanics
    (HTTP-first with a Playwright fallback, politeness rules, backlink
    verification pipeline).
+6. [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) — optional: put this on
+   the public internet for free (Neon + Render + Vercel), gated behind a
+   single shared password since this app has no multi-user auth.
 
 ## Stack (free-first — see `ARCHITECTURE.md` for the full rationale)
 
@@ -125,7 +128,7 @@ infrastructure:
   against a live backend via Playwright, not just a build check — see
   `frontend/README.md`.
 
-175 tests pass, almost all against real infrastructure (a real fixture
+178 tests pass, almost all against real infrastructure (a real fixture
 HTTP server that can simulate multiple distinct domains, a real Postgres
 database, real live crawls/verification/contact-discovery/DNS lookups
 against real public sites/domains). Three honest caveats, not glossed
@@ -157,3 +160,8 @@ it.
 docker compose -f docker/docker-compose.yml up   # Postgres + Redis + Ollama
 cd backend && pip install -e ".[dev]" && pytest app/tests -v
 ```
+
+Want a public URL instead of localhost? See
+[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) — free-tier hosting with a
+shared-password gate (`APP_SHARED_SECRET`), since this app has no
+multi-user auth of its own.

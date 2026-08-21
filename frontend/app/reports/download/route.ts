@@ -23,7 +23,11 @@ export async function GET(request: NextRequest) {
     upstreamUrl.searchParams.set(key, value);
   }
 
-  const upstream = await fetch(upstreamUrl, { cache: "no-store" });
+  const appSharedSecret = process.env.APP_SHARED_SECRET;
+  const upstream = await fetch(upstreamUrl, {
+    cache: "no-store",
+    headers: appSharedSecret ? { "x-app-secret": appSharedSecret } : {},
+  });
   const body = await upstream.arrayBuffer();
 
   return new NextResponse(body, {

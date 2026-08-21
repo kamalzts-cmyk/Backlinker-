@@ -10,6 +10,11 @@
 
 const API_URL = process.env.API_URL ?? "http://localhost:8000";
 
+// Sent on every backend call so the backend's SharedSecretMiddleware
+// (app/api/auth_gate.py) lets it through. Unset in local dev, where the
+// backend doesn't enforce it either -- see docs/DEPLOYMENT.md.
+const APP_SHARED_SECRET = process.env.APP_SHARED_SECRET;
+
 export class ApiError extends Error {
   status: number;
   code: string | null;
@@ -35,7 +40,11 @@ async function request<T>(
   const response = await fetch(url, {
     ...init,
     cache: "no-store", // every resource here changes on other people's actions; never serve stale
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(APP_SHARED_SECRET ? { "x-app-secret": APP_SHARED_SECRET } : {}),
+      ...init?.headers,
+    },
   });
 
   if (!response.ok) {
